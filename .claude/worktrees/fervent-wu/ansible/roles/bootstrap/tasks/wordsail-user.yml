@@ -1,0 +1,34 @@
+---
+- name: Create sudo group
+  ansible.builtin.group:
+    name: sudo
+    state: present
+
+- name: Configure sudoers
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    regexp: '^%sudo'
+    line: '%sudo ALL=(ALL:ALL) ALL'
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Create wpsh user
+  ansible.builtin.user:
+    name: wpsh
+    groups: sudo
+    shell: /bin/bash
+    create_home: true
+    state: present
+
+- name: Set up authorized key for wpsh
+  ansible.posix.authorized_key:
+    user: wpsh
+    key: "{{ lookup('file', wpsh_ssh_key) if wpsh_ssh_key is match('.*\\.(pub|pem)$') or wpsh_ssh_key.startswith('~') or wpsh_ssh_key.startswith('/') else wpsh_ssh_key }}"
+    state: present
+    manage_dir: true
+
+- name: Configure sudoers for wpsh
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/00-wpsh
+    content: 'wpsh ALL=(ALL) NOPASSWD: ALL'
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s

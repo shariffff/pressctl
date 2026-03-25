@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pressctl CLI",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "."],
+      "cwd": "cli",
+      "port": 0
+    }
+  ]
+}

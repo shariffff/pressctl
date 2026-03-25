@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+  --font-sans: "Mona Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --color-terminal-green: #34d399;
+  --color-terminal-yellow: #fbbf24;
+  --color-terminal-cyan: #22d3ee;
+  --color-terminal-red: #f87171;
+  --color-surface: #18181b;
+  --color-surface-dim: #0f0f12;
+  --color-border-subtle: #27272a;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-300 antialiased;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out both;
+}
+
+.delay-100 {
+  animation-delay: 0.1s;
+}
+.delay-200 {
+  animation-delay: 0.2s;
+}
+.delay-300 {
+  animation-delay: 0.3s;
+}
+.delay-400 {
+  animation-delay: 0.4s;
+}
+
+/* Prose styles for docs */
+.docs-prose h2 {
+  @apply text-2xl font-bold text-white mt-14 mb-4 pb-2 border-b border-zinc-800;
+}
+
+.docs-prose h3 {
+  @apply text-lg font-semibold text-white mt-8 mb-3;
+}
+
+.docs-prose p {
+  @apply text-zinc-400 leading-relaxed mb-4;
+}
+
+.docs-prose ul,
+.docs-prose ol {
+  @apply text-zinc-400 leading-relaxed mb-4 pl-6;
+}
+
+.docs-prose ul {
+  @apply list-disc;
+}
+
+.docs-prose ol {
+  @apply list-decimal;
+}
+
+.docs-prose li {
+  @apply mb-2;
+}
+
+.docs-prose strong {
+  @apply text-zinc-200 font-semibold;
+}
+
+.docs-prose code {
+  @apply font-mono text-terminal-green bg-zinc-900 px-1.5 py-0.5 rounded text-sm;
+}
+
+.docs-prose pre {
+  @apply bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 mb-4 overflow-x-auto font-mono text-sm;
+}
+
+.docs-prose pre code {
+  @apply bg-transparent px-0 py-0;
+}
+
+.docs-prose a {
+  @apply text-terminal-green underline underline-offset-2 hover:text-terminal-green/80 transition-colors;
+}
+
+.docs-prose blockquote {
+  @apply border-l-2 border-terminal-green/40 pl-4 my-4 text-zinc-500 italic;
+}

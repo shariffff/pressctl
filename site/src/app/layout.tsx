@@ -46,7 +46,7 @@ export default function RootLayout({
         <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-md">
           <div className="max-w-5xl mx-auto flex items-center justify-between px-6 h-14">
             <Link href="/" className="font-mono font-bold text-white text-sm hover:opacity-80 transition-opacity">
-              press<span className="text-terminal-green">ctl</span>
+              press<span className="text-accent">ctl</span>
             </Link>
             <div className="flex items-center gap-6">
               <Link
@@ -56,7 +56,7 @@ export default function RootLayout({
                 Docs
               </Link>
               <a
-                href="https://github.com/shariffff/wpsh"
+                href="https://github.com/shariffff/pressctl"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-zinc-400 hover:text-white transition-colors"

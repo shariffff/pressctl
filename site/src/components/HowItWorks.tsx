@@ -1,69 +1,46 @@
-const steps = [
-  {
-    number: "1",
-    title: "Install",
-    description: "One curl command copies the press binary and Ansible playbooks to your machine.",
-    code: "curl -fsSL https://...install.sh | bash\npress init",
-  },
-  {
-    number: "2",
-    title: "Add your server",
-    description: "Point pressctl at any fresh Ubuntu 24.04 VPS — DigitalOcean, Hetzner, AWS, anything with root SSH.",
-    code: "press server provision\n# Enter IP, SSH key path",
-  },
-  {
-    number: "3",
-    title: "Deploy sites",
-    description: "Create WordPress sites, add domains, and issue SSL certificates — all from the same menu.",
-    code: "press site create\npress domain add\npress domain ssl",
-  },
-];
+import CopyButton from "@/components/ui/CopyButton";
+import GitHubIcon from "@/components/ui/GitHubIcon";
+
+const INSTALL_CMD =
+  "curl -fsSL https://raw.githubusercontent.com/pressctl/cli/main/install.sh | bash";
 
 export default function HowItWorks() {
   return (
-    <section className="px-6 py-24 max-w-5xl mx-auto">
-      <h2 className="text-2xl sm:text-3xl font-mono font-bold text-white text-center mb-4">
-        Three steps. That&apos;s it.
-      </h2>
-      <p className="text-zinc-500 text-center mb-16 max-w-lg mx-auto">
-        From a blank VPS to a live WordPress site in minutes.
-      </p>
+    <section className="px-6 py-24 border-t border-zinc-800/50">
+      <div className="max-w-3xl mx-auto text-center">
+        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+          Get started in seconds
+        </h2>
+        <p className="text-zinc-500 mb-10 max-w-lg mx-auto">
+          Install pressctl, point it at any Ubuntu 24.04 VPS, and you&apos;re hosting WordPress.
+        </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-        {/* Connecting line (desktop only) */}
-        <div className="hidden md:block absolute top-10 left-[16.5%] right-[16.5%] h-px border-t border-dashed border-zinc-700" />
+        {/* Install command */}
+        <div className="flex items-start gap-2 max-w-xl mx-auto mb-8 px-4 py-3 rounded-lg bg-zinc-900 border border-zinc-800 font-mono text-sm text-left">
+          <span className="text-accent select-none mt-0.5">$</span>
+          <code className="text-zinc-300 flex-1 break-all whitespace-pre-wrap">
+            {INSTALL_CMD}
+          </code>
+          <CopyButton text={INSTALL_CMD} />
+        </div>
 
-        {steps.map((step) => (
-          <div key={step.number} className="relative text-center">
-            {/* Step number */}
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-terminal-green/30 bg-terminal-green/10 text-terminal-green font-mono font-bold text-lg mb-5 relative z-10">
-              {step.number}
-            </div>
-
-            <h3 className="text-lg font-mono font-semibold text-white mb-2">
-              {step.title}
-            </h3>
-            <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
-              {step.description}
-            </p>
-
-            {/* Code snippet */}
-            <div className="text-left px-4 py-3 rounded-lg bg-zinc-900 border border-zinc-800 font-mono text-xs">
-              {step.code.split("\n").map((line, i) => (
-                <div key={i} className={line.startsWith("#") ? "text-zinc-600" : "text-zinc-400"}>
-                  {!line.startsWith("#") && (
-                    <span className="text-terminal-green select-none">$ </span>
-                  )}
-                  {line.startsWith("#") ? (
-                    <span className="text-zinc-600">{line}</span>
-                  ) : (
-                    line
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a
+            href="https://github.com/shariffff/pressctl"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-white bg-accent/10 border border-accent/20 rounded-lg hover:bg-accent/20 transition-all"
+          >
+            <GitHubIcon className="w-4 h-4" />
+            View on GitHub
+          </a>
+          <a
+            href="/docs"
+            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+          >
+            Read the docs
+          </a>
+        </div>
       </div>
     </section>
   );

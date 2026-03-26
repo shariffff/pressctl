@@ -1,58 +1,52 @@
-import { Server, Globe, Lock, TerminalSquare } from "lucide-react";
-
 const features = [
   {
-    icon: Server,
-    title: "Server Provisioning",
+    title: "Run it yourself",
     description:
-      "Full LEMP stack in one command — Nginx, PHP 8.3, MariaDB, Redis, Certbot, UFW, and Fail2ban on Ubuntu 24.04.",
+      "Interactive CLI with numbered menus. No subcommands to memorize. Run press and pick an action.",
   },
   {
-    icon: Globe,
-    title: "WordPress Deployment",
+    title: "Script it",
     description:
-      "Isolated sites with dedicated Linux users, PHP-FPM pools, databases, and WP-CLI — no shared hosting footguns.",
+      "Every action has flags for non-interactive mode. Drop it into CI/CD, cron jobs, or shell scripts.",
   },
   {
-    icon: Lock,
-    title: "SSL & Domain Management",
+    title: "Hand it to your AI agent",
     description:
-      "Add domains and issue Let's Encrypt certificates interactively. No certbot flags to memorize.",
+      "Structured commands and predictable output make pressctl a natural fit for AI agents like Claude Code or Cursor.",
   },
   {
-    icon: TerminalSquare,
-    title: "Interactive Menu",
+    title: "Production-grade stack",
     description:
-      "Run `press` with no arguments and pick from a numbered action menu. No subcommands to look up.",
+      "Nginx, PHP 8.3, MariaDB, Redis, Let's Encrypt, UFW, Fail2ban — on Ubuntu 24.04. Battle-tested Ansible under the hood.",
   },
 ];
 
 export default function Features() {
   return (
-    <section className="px-6 py-24 max-w-5xl mx-auto">
-      <h2 className="text-2xl sm:text-3xl font-mono font-bold text-white text-center mb-4">
-        Everything you need to host WordPress
-      </h2>
-      <p className="text-zinc-500 text-center mb-14 max-w-xl mx-auto">
-        Production-ready infrastructure from a single CLI. Powered by Ansible
-        playbooks under the hood.
-      </p>
+    <section className="px-6 py-24 border-t border-zinc-800/50">
+      <div className="max-w-5xl mx-auto">
+        <h2 className="text-2xl sm:text-3xl font-bold text-white text-center mb-4">
+          Your workflow. Your way.
+        </h2>
+        <p className="text-zinc-500 text-center mb-16 max-w-xl mx-auto">
+          Terminal, automation, or AI — pressctl fits however you work.
+        </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {features.map((feature) => (
-          <div
-            key={feature.title}
-            className="group p-6 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-700 transition-all"
-          >
-            <feature.icon className="w-8 h-8 text-terminal-green mb-4 group-hover:scale-110 transition-transform" />
-            <h3 className="text-lg font-mono font-semibold text-white mb-2">
-              {feature.title}
-            </h3>
-            <p className="text-sm text-zinc-400 leading-relaxed">
-              {feature.description}
-            </p>
-          </div>
-        ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-zinc-800/50 rounded-xl overflow-hidden border border-zinc-800">
+          {features.map((feature) => (
+            <div
+              key={feature.title}
+              className="p-8 bg-zinc-950"
+            >
+              <h3 className="text-lg font-semibold text-white mb-2">
+                {feature.title}
+              </h3>
+              <p className="text-sm text-zinc-400 leading-relaxed">
+                {feature.description}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

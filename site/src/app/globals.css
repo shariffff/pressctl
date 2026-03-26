@@ -5,6 +5,7 @@
     Consolas, "Liberation Mono", monospace;
   --font-sans: "Mona Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
+  --color-accent: #f53003;
   --color-terminal-green: #34d399;
   --color-terminal-yellow: #fbbf24;
   --color-terminal-cyan: #22d3ee;
@@ -97,7 +98,7 @@
 }
 
 .docs-prose code {
-  @apply font-mono text-terminal-green bg-zinc-900 px-1.5 py-0.5 rounded text-sm;
+  @apply font-mono text-accent bg-zinc-900 px-1.5 py-0.5 rounded text-sm;
 }
 
 .docs-prose pre {
@@ -109,9 +110,9 @@
 }
 
 .docs-prose a {
-  @apply text-terminal-green underline underline-offset-2 hover:text-terminal-green/80 transition-colors;
+  @apply text-accent underline underline-offset-2 hover:text-accent/80 transition-colors;
 }
 
 .docs-prose blockquote {
-  @apply border-l-2 border-terminal-green/40 pl-4 my-4 text-zinc-500 italic;
+  @apply border-l-2 border-accent/40 pl-4 my-4 text-zinc-500 italic;
 }

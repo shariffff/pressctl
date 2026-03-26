@@ -7,7 +7,7 @@ export default function Footer() {
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Link href="/" className="font-mono font-bold text-white text-sm hover:opacity-80 transition-opacity">
-            press<span className="text-terminal-green">ctl</span>
+            press<span className="text-accent">ctl</span>
           </Link>
           <span className="text-zinc-600 text-xs">MIT License</span>
         </div>
@@ -20,7 +20,7 @@ export default function Footer() {
             Documentation
           </Link>
           <a
-            href="https://github.com/shariffff/wpsh"
+            href="https://github.com/shariffff/pressctl"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors"

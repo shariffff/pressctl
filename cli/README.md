@@ -47,15 +47,7 @@ press --help
 
 ## Quick Start
 
-### 1. Initialize Configuration
-
-```bash
-press init
-```
-
-This creates `~/.pressctl/pressctl.yaml` with default settings.
-
-### 2. Configure Ansible Path
+### 1. Configure Ansible Path
 
 Edit `~/.pressctl/pressctl.yaml` and set the correct Ansible project path:
 
@@ -67,7 +59,7 @@ ansible:
   python_interpreter: '/usr/bin/python3'
 ```
 
-### 3. Add a Server
+### 2. Add a Server
 
 ```bash
 press server add
@@ -80,13 +72,13 @@ Follow the interactive prompts to add server details:
 - SSH user and port
 - SSH private key file
 
-### 4. List Servers
+### 3. List Servers
 
 ```bash
 press server list
 ```
 
-### 5. Validate Configuration
+### 4. Validate Configuration
 
 ```bash
 press config validate

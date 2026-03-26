@@ -2,7 +2,7 @@ import CopyButton from "@/components/ui/CopyButton";
 import GitHubIcon from "@/components/ui/GitHubIcon";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/pressctl/cli/main/install.sh | bash";
+  "curl -fsSL https://raw.githubusercontent.com/shariffff/pressctl/main/install.sh | bash";
 
 export default function HowItWorks() {
   return (

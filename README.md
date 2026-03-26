@@ -8,12 +8,6 @@ Automated WordPress hosting on Ubuntu servers. One command to provision, one com
 curl -fsSL https://raw.githubusercontent.com/shariffff/pressctl/main/install.sh | bash
 ```
 
-Then initialize:
-
-```bash
-press init
-```
-
 ## Quick Start
 
 ```bash

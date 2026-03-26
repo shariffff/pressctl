@@ -47,7 +47,6 @@ export default function DocsPage() {
               </p>
               <SidebarLink href="#requirements">Requirements</SidebarLink>
               <SidebarLink href="#install">Installation</SidebarLink>
-              <SidebarLink href="#initialize">Initialize</SidebarLink>
 
               <p className="text-xs font-semibold text-zinc-600 uppercase tracking-wider mt-6 mb-3">
                 Server
@@ -93,24 +92,17 @@ export default function DocsPage() {
             <ol>
               <li><strong>Linux or macOS</strong> on your local machine</li>
               <li><strong>Ansible 2.14+</strong> installed (<code>pip install ansible</code> or <code>brew install ansible</code>)</li>
-              <li><strong>curl</strong> installed (ships with most systems)</li>
               <li>
                 A <strong>fresh Ubuntu 24.04 server</strong> with root SSH access —
                 DigitalOcean, Hetzner, AWS, Linode, or any VPS provider
               </li>
             </ol>
-            <p>Check if curl is available:</p>
-            <CodeBlock code="curl --version" />
-            <p>
-              If not installed — on Ubuntu/Debian: <code>sudo apt update &amp;&amp; sudo apt install curl -y</code>.
-              On macOS: <code>brew install curl</code>.
-            </p>
 
             {/* ── Installation ── */}
             <h2 id="install">Installation</h2>
             <p>Install pressctl with a single command:</p>
             <CodeBlock
-              code="curl -fsSL https://raw.githubusercontent.com/pressctl/cli/main/install.sh | bash"
+              code="curl -fsSL https://raw.githubusercontent.com/shariffff/pressctl/main/install.sh | bash"
             />
             <p><strong>What this does:</strong></p>
             <ol>
@@ -121,18 +113,6 @@ export default function DocsPage() {
             <p>
               No repository cloning, no manual build steps. One command and you&apos;re ready.
             </p>
-
-            {/* ── Initialize ── */}
-            <h2 id="initialize">Initialize</h2>
-            <p>After installation, run the init command to create your configuration:</p>
-            <CodeBlock code="press init" />
-            <p><strong>What this does:</strong></p>
-            <ul>
-              <li>Creates <code>~/.pressctl/pressctl.yaml</code> — the config file that tracks all your servers, sites, and domains</li>
-              <li>Prompts for your <strong>SSH public key path</strong> (used to access provisioned servers)</li>
-              <li>Prompts for your <strong>email address</strong> (used for Let&apos;s Encrypt SSL certificates)</li>
-            </ul>
-            <p>After this step, pressctl is fully configured and ready to provision servers.</p>
 
             {/* ── Provision ── */}
             <h2 id="provision">Provision a Server</h2>
@@ -313,7 +293,6 @@ export default function DocsPage() {
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
                   <tr><td className="px-4 py-2"><code>press</code></td><td className="px-4 py-2 text-zinc-400">Quick actions menu</td></tr>
-                  <tr><td className="px-4 py-2"><code>press init</code></td><td className="px-4 py-2 text-zinc-400">Initialize configuration</td></tr>
                   <tr><td className="px-4 py-2"><code>press server provision</code></td><td className="px-4 py-2 text-zinc-400">Add and provision a new server</td></tr>
                   <tr><td className="px-4 py-2"><code>press server list</code></td><td className="px-4 py-2 text-zinc-400">List all servers</td></tr>
                   <tr><td className="px-4 py-2"><code>press server health-check</code></td><td className="px-4 py-2 text-zinc-400">Test server connectivity</td></tr>

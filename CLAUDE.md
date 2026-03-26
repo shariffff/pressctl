@@ -148,9 +148,6 @@ make clean
 ### CLI Commands Overview
 
 ```bash
-# Initialization (run once after install)
-press init
-
 # Configuration management
 press config show
 press config validate
@@ -222,7 +219,7 @@ press domain ssl
 
 **Package Organization:**
 
-- `cmd/`: Cobra command definitions (root, init, config, server, site, domain, version)
+- `cmd/`: Cobra command definitions (root, config, server, site, domain, version)
 - `internal/config/`: YAML config loading/saving, validation
 - `internal/ansible/`: Ansible inventory generation and playbook execution
 - `internal/installer/`: Setup logic for copying ansible files to ~/.pressctl/
@@ -242,7 +239,6 @@ press domain ssl
 
 **Ansible Integration:**
 
-- `press init` copies ansible/ directory to `~/.pressctl/ansible/` on first run
 - CLI detects ansible location (user's ~/.pressctl/ansible/ or system install path)
 - CLI generates temporary inventory files at runtime
 - Executes Ansible playbooks with real-time output streaming
@@ -295,4 +291,4 @@ For `website.yml`:
 - State updates happen after successful Ansible execution
 - Validation occurs before execution (config, SSH connectivity)
 - Ansible paths resolved in order: `~/.pressctl/ansible/` → `/usr/local/share/pressctl/ansible/` → relative path (dev mode)
-- `press init` must be run once after installation to copy ansible files locally
+- The install script copies ansible files to `~/.pressctl/ansible/` during installation

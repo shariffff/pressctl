@@ -33,9 +33,6 @@ Manage servers, sites, and domains with ease while maintaining full
 visibility into your infrastructure state via ~/.pressctl/pressctl.yaml
 
 Examples:
-  # Initialize configuration
-  press init
-
   # Add and provision a new server
   press server provision
 

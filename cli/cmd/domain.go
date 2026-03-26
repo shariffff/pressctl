@@ -9,7 +9,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
-	"github.com/pressctl/cli/internal/config"
 	"github.com/pressctl/cli/internal/prompt"
 	"github.com/pressctl/cli/internal/state"
 	"github.com/pressctl/cli/internal/utils"
@@ -37,22 +36,7 @@ Examples:
   # Non-interactive mode (for automation/AI agents)
   press domain add --server myserver --site mysite --domain www.example.com --ssl`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			outputError(cmd, "Failed to create config manager", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			outputError(cmd, "Configuration file not found", fmt.Errorf("run 'press init' first"))
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			outputError(cmd, "Failed to load configuration", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		var input *prompt.DomainAddInput
 
@@ -142,16 +126,9 @@ Examples:
 			color.Cyan("═══════════════════════════════════════════════════════")
 			fmt.Println()
 
-			// Get certbot email from global vars
-			certbotEmail := "admin@example.com"
-			if email, ok := cfg.GlobalVars["certbot_email"].(string); ok {
-				certbotEmail = email
-			}
-
 			sslVars := map[string]interface{}{
-				"operation":     "issue_ssl",
-				"domain":        input.Domain,
-				"certbot_email": certbotEmail,
+				"operation": "issue_ssl",
+				"domain":    input.Domain,
 			}
 
 			sslResult, err := executor.ExecutePlaybookWithResult("playbooks/domain_management.yml", *targetServer, sslVars, cfg.GlobalVars)
@@ -215,22 +192,7 @@ Examples:
   # Non-interactive mode (for automation/AI agents)
   press domain remove --server myserver --site mysite --domain www.example.com --force`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			outputError(cmd, "Failed to create config manager", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			outputError(cmd, "Configuration file not found", fmt.Errorf("run 'press init' first"))
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			outputError(cmd, "Failed to load configuration", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		var input *prompt.DomainRemoveInput
 
@@ -340,30 +302,9 @@ Examples:
   press domain ssl
 
   # Non-interactive mode (for automation/AI agents)
-  press domain ssl --server myserver --site mysite --domain www.example.com --email admin@example.com`,
+  press domain ssl --server myserver --site mysite --domain www.example.com`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			outputError(cmd, "Failed to create config manager", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			outputError(cmd, "Configuration file not found", fmt.Errorf("run 'press init' first"))
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			outputError(cmd, "Failed to load configuration", err)
-			os.Exit(1)
-		}
-
-		// Get default certbot email from config
-		defaultEmail := "admin@example.com"
-		if email, ok := cfg.GlobalVars["certbot_email"].(string); ok {
-			defaultEmail = email
-		}
+		mgr, cfg := ensureConfig()
 
 		var input *prompt.DomainSSLInput
 
@@ -374,15 +315,10 @@ Examples:
 
 		if serverName != "" && siteName != "" && domain != "" {
 			// Non-interactive mode
-			email, _ := cmd.Flags().GetString("email")
-			if email == "" {
-				email = defaultEmail
-			}
 			input = &prompt.DomainSSLInput{
-				ServerName:   serverName,
-				SiteID:       siteName,
-				Domain:       domain,
-				CertbotEmail: email,
+				ServerName: serverName,
+				SiteID:     siteName,
+				Domain:     domain,
 			}
 		} else if serverName != "" || siteName != "" || domain != "" {
 			outputError(cmd, "Incomplete flags", fmt.Errorf("--server, --site, and --domain are all required for non-interactive mode"))
@@ -390,7 +326,7 @@ Examples:
 		} else {
 			// Interactive mode - get input from prompts
 			var err error
-			input, err = prompt.PromptDomainSSL(cfg.Servers, defaultEmail)
+			input, err = prompt.PromptDomainSSL(cfg.Servers)
 			if err != nil {
 				outputError(cmd, "Failed to get SSL details", err)
 				os.Exit(1)
@@ -413,9 +349,8 @@ Examples:
 
 		// Prepare extra vars for Ansible
 		extraVars := map[string]interface{}{
-			"operation":     "issue_ssl",
-			"domain":        input.Domain,
-			"certbot_email": input.CertbotEmail,
+			"operation": "issue_ssl",
+			"domain":    input.Domain,
 		}
 
 		// Create Ansible executor
@@ -499,6 +434,5 @@ func init() {
 	domainSSLCmd.Flags().String("server", "", "Server name")
 	domainSSLCmd.Flags().String("site", "", "Site ID")
 	domainSSLCmd.Flags().String("domain", "", "Domain to issue SSL for")
-	domainSSLCmd.Flags().String("email", "", "Email for Let's Encrypt notifications")
 	domainSSLCmd.Flags().Bool("json", false, "Output in JSON format")
 }

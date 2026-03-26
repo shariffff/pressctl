@@ -25,23 +25,7 @@ var configShowCmd = &cobra.Command{
 	Short: "Display current configuration",
 	Long:  `Display the contents of the pressctl configuration file.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found at: %s", mgr.GetConfigPath())
-			fmt.Println("Run 'press init' to create it.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		// Marshal to YAML for pretty display
 		data, err := yaml.Marshal(cfg)
@@ -61,23 +45,7 @@ var configValidateCmd = &cobra.Command{
 	Short: "Validate configuration file",
 	Long:  `Validate the pressctl configuration file for correctness and consistency.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found at: %s", mgr.GetConfigPath())
-			fmt.Println("Run 'press init' to create it.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		_, cfg := ensureConfig()
 
 		validator := config.NewValidator()
 
@@ -123,23 +91,7 @@ var configEditCmd = &cobra.Command{
 	Short: "Edit configuration file in your preferred editor",
 	Long:  `Open the pressctl configuration file in your preferred editor. On first run, you'll be prompted to select an editor.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found at: %s", mgr.GetConfigPath())
-			fmt.Println("Run 'press init' to create it.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		// If no preferred editor is set, prompt for one
 		if cfg.PreferredEditor == "" {

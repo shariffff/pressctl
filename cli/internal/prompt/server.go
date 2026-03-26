@@ -13,12 +13,13 @@ import (
 
 // ServerInput holds the input for server creation
 type ServerInput struct {
-	Name     string
-	Hostname string
-	IP       string
-	SSHUser  string
-	SSHPort  int
-	SSHKey   string
+	Name       string
+	Hostname   string
+	IP         string
+	SSHUser    string
+	SSHPort    int
+	SSHKey     string
+	PHPVersion string
 }
 
 // PromptServerAdd prompts for server details
@@ -104,6 +105,17 @@ func PromptServerAdd() (*ServerInput, error) {
 		input.SSHPort = 22
 	}
 
+	// PHP version selection
+	phpPrompt := &survey.Select{
+		Message: "PHP version:",
+		Options: models.SupportedPHPVersions,
+		Default: models.DefaultPHPVersion,
+		Help:    "PHP version to install on the server",
+	}
+	if err := survey.AskOne(phpPrompt, &input.PHPVersion); err != nil {
+		return nil, err
+	}
+
 	// Confirmation
 	if err := confirmServerAdd(input); err != nil {
 		return nil, err
@@ -161,6 +173,10 @@ func findSSHKeys() ([]string, error) {
 
 // ToServer converts ServerInput to models.Server
 func (si *ServerInput) ToServer() models.Server {
+	phpVersion := si.PHPVersion
+	if phpVersion == "" {
+		phpVersion = models.DefaultPHPVersion
+	}
 	return models.Server{
 		Name:     si.Name,
 		Hostname: si.Hostname,
@@ -170,18 +186,20 @@ func (si *ServerInput) ToServer() models.Server {
 			Port:    si.SSHPort,
 			KeyFile: si.SSHKey,
 		},
-		Status: "unprovisioned",
-		Sites:  []models.Site{},
+		PHPVersion: phpVersion,
+		Status:     "unprovisioned",
+		Sites:      []models.Site{},
 	}
 }
 
 func confirmServerAdd(input *ServerInput) error {
 	fmt.Println("\nServer Configuration:")
-	fmt.Printf("  Name:     %s\n", input.Name)
-	fmt.Printf("  IP:       %s\n", input.IP)
-	fmt.Printf("  SSH Key:  %s\n", input.SSHKey)
-	fmt.Printf("  SSH User: %s\n", input.SSHUser)
-	fmt.Printf("  SSH Port: %d\n", input.SSHPort)
+	fmt.Printf("  Name:        %s\n", input.Name)
+	fmt.Printf("  IP:          %s\n", input.IP)
+	fmt.Printf("  SSH Key:     %s\n", input.SSHKey)
+	fmt.Printf("  SSH User:    %s\n", input.SSHUser)
+	fmt.Printf("  SSH Port:    %d\n", input.SSHPort)
+	fmt.Printf("  PHP Version: %s\n", input.PHPVersion)
 
 	var confirm bool
 	confirmPrompt := &survey.Confirm{

@@ -3,11 +3,9 @@
   ansible.builtin.assert:
     that:
       - domain is defined and domain != ""
-      - certbot_email is defined and certbot_email != ""
     fail_msg: |
       Required variables missing for issue_ssl operation:
         - domain: Domain name to issue SSL certificate for
-        - certbot_email: Email address for Let's Encrypt notifications
     success_msg: 'All required variables are properly defined'
   tags: issue_ssl
 
@@ -83,7 +81,7 @@
   ansible.builtin.command:
     cmd:
       certbot certonly --webroot --cert-name {{ domain }} --webroot-path /sites/.certbot -d {{ domain }} --preferred-challenges http --noninteractive
-      --agree-tos --email {{ certbot_email }}
+      --agree-tos --no-eff-email --register-unsafely-without-email
     creates: /etc/letsencrypt/live/{{ domain }}
   tags: issue_ssl
 

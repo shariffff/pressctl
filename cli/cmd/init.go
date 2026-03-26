@@ -5,177 +5,71 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/config"
 	"github.com/pressctl/cli/internal/installer"
 	"github.com/pressctl/cli/internal/prompt"
 )
 
-// initCmd represents the init command
-var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize pressctl environment",
-	Long: `Initialize pressctl by setting up configuration and copying Ansible playbooks.
+// ensureConfig loads the config, auto-initializing on first use if needed.
+// Every command that needs config should call this instead of manually
+// checking ConfigExists().
+func ensureConfig() (*config.Manager, *config.Config) {
+	mgr, err := config.NewManager()
+	if err != nil {
+		color.Red("Error: %v", err)
+		os.Exit(1)
+	}
 
-This command will:
-  1. Create ~/.pressctl/ directory structure
-  2. Copy Ansible playbooks from the repository to ~/.pressctl/ansible/
-  3. Create initial configuration file (pressctl.yaml)
-  4. Prompt for global settings (SSH key, certbot email)
-  5. Validate the installation
-
-Note: MySQL admin passwords are generated automatically per-server during provisioning.
-
-Run this command once after installing pressctl.
-
-Examples:
-  # Interactive mode
-  press init
-
-  # Non-interactive mode
-  press init --ssh-public-key ~/.ssh/id_rsa.pub --certbot-email admin@example.com
-
-  # Force overwrite existing configuration
-  press init --force`,
-	Run: func(cmd *cobra.Command, args []string) {
-		force, _ := cmd.Flags().GetBool("force")
-
-		color.Cyan("═══════════════════════════════════════════════════════")
-		color.Cyan("  pressctl Initialization")
-		color.Cyan("═══════════════════════════════════════════════════════")
-		fmt.Println()
-
-		mgr, err := config.NewManager()
+	if mgr.ConfigExists() {
+		cfg, err := mgr.Load()
 		if err != nil {
-			color.Red("Error: %v", err)
+			color.Red("Error: Failed to load configuration: %v", err)
 			os.Exit(1)
 		}
+		return mgr, cfg
+	}
 
-		// Check if config already exists
-		if mgr.ConfigExists() && !force {
-			color.Yellow("Configuration file already exists at: %s", mgr.GetConfigPath())
-			fmt.Println()
-			fmt.Println("Options:")
-			fmt.Printf("  • Edit the config:      %s %s\n", getEditor(), mgr.GetConfigPath())
-			fmt.Println("  • Overwrite config:     press init --force")
-			fmt.Println()
-			fmt.Println("Use --force to overwrite the existing configuration.")
-			os.Exit(1)
-		}
+	// Auto-initialize on first use
+	fmt.Println()
+	color.Cyan("First run — initializing pressctl...")
+	fmt.Println()
 
-		// Check if ansible is already initialized
-		ansibleInitialized := installer.IsInitialized()
-
-		if !ansibleInitialized {
-			// Initialize ansible directory
-			fmt.Print("→ Copying Ansible playbooks... ")
-			if err := installer.Initialize(); err != nil {
-				color.Red("✗")
-				color.Red("\nError: %v", err)
-				os.Exit(1)
-			}
-			color.Green("✓")
-		} else {
-			fmt.Println("→ Ansible playbooks already installed ✓")
-		}
-
-		// Get one-time setup values
-		var initInput *prompt.InitInput
-
-		// Check for non-interactive mode
-		sshKey, _ := cmd.Flags().GetString("ssh-public-key")
-		certbotEmail, _ := cmd.Flags().GetString("certbot-email")
-
-		if sshKey != "" && certbotEmail != "" {
-			// Non-interactive mode
-			initInput = &prompt.InitInput{
-				SSHPublicKey: sshKey,
-				CertbotEmail: certbotEmail,
-			}
-		} else if sshKey != "" || certbotEmail != "" {
-			// Partial flags provided
-			color.Red("Error: All flags required for non-interactive mode: --ssh-public-key, --certbot-email")
-			os.Exit(1)
-		} else {
-			// Interactive mode - prompt for setup values
-			initInput, err = prompt.PromptInitSetup()
-			if err != nil {
-				color.Red("\nError: %v", err)
-				os.Exit(1)
-			}
-		}
-
-		// Create configuration with the provided values
-		fmt.Print("→ Creating configuration file... ")
-
-		cfg := config.DefaultConfig()
-		cfg.Ansible.Path = installer.GetAnsibleDir()
-
-		// Set global vars from user input
-		cfg.GlobalVars["pressctl_ssh_key"] = initInput.SSHPublicKey
-		cfg.GlobalVars["certbot_email"] = initInput.CertbotEmail
-
-		if err := mgr.Save(cfg); err != nil {
+	// Copy Ansible playbooks if needed
+	if !installer.IsInitialized() {
+		fmt.Print("→ Copying Ansible playbooks... ")
+		if err := installer.Initialize(); err != nil {
 			color.Red("✗")
 			color.Red("\nError: %v", err)
+			color.Red("Could not find Ansible playbooks. Make sure pressctl is installed correctly.")
 			os.Exit(1)
 		}
 		color.Green("✓")
-
-		// Validate installation
-		fmt.Print("→ Validating installation... ")
-		if err := validateInstallation(); err != nil {
-			color.Red("✗")
-			color.Red("\nWarning: %v", err)
-		} else {
-			color.Green("✓")
-		}
-
-		// Success message
-		fmt.Println()
-		color.Green("═══════════════════════════════════════════════════════")
-		color.Green("  ✓ pressctl initialized successfully!")
-		color.Green("═══════════════════════════════════════════════════════")
-		fmt.Println()
-		fmt.Println("Installation paths:")
-		fmt.Printf("  • Ansible:       %s\n", installer.GetAnsibleDir())
-		fmt.Printf("  • Config:        %s\n", mgr.GetConfigPath())
-		fmt.Println()
-		fmt.Println("Configuration saved:")
-		fmt.Printf("  • SSH Public Key:    %s\n", initInput.SSHPublicKey)
-		fmt.Printf("  • Certbot Email:     %s\n", initInput.CertbotEmail)
-		fmt.Println()
-		fmt.Println("To edit your configuration later:")
-		fmt.Printf("  %s %s\n", getEditor(), mgr.GetConfigPath())
-		fmt.Println()
-		fmt.Println("Next steps:")
-		fmt.Println("  1. Add a server:    press server add")
-		fmt.Println("  2. Provision:       press server provision <name>")
-		fmt.Println("  3. Create site:     press site create")
-		fmt.Println()
-	},
-}
-
-func validateInstallation() error {
-	// Check if ansible directory has required files
-	ansiblePath := installer.GetAnsibleDir()
-
-	requiredFiles := []string{
-		"provision.yml",
-		"website.yml",
-		"playbooks/domain_management.yml",
-		"playbooks/delete_site.yml",
-		"ansible.cfg",
 	}
 
-	for _, file := range requiredFiles {
-		fullPath := fmt.Sprintf("%s/%s", ansiblePath, file)
-		if _, err := os.Stat(fullPath); err != nil {
-			return fmt.Errorf("missing required file: %s", file)
-		}
+	// Auto-detect SSH public key
+	initInput, err := prompt.PromptInitSetup()
+	if err != nil {
+		color.Red("Error: %v", err)
+		os.Exit(1)
 	}
 
-	return nil
+	// Create config
+	fmt.Print("→ Creating configuration... ")
+	cfg := config.DefaultConfig()
+	cfg.Ansible.Path = installer.GetAnsibleDir()
+	cfg.GlobalVars["pressctl_ssh_key"] = initInput.SSHPublicKey
+
+	if err := mgr.Save(cfg); err != nil {
+		color.Red("✗")
+		color.Red("\nError: %v", err)
+		os.Exit(1)
+	}
+	color.Green("✓")
+
+	fmt.Printf("→ Config: %s\n", mgr.GetConfigPath())
+	fmt.Println()
+
+	return mgr, cfg
 }
 
 // getEditor returns the user's preferred editor
@@ -187,13 +81,4 @@ func getEditor() string {
 		return editor
 	}
 	return "nano"
-}
-
-func init() {
-	rootCmd.AddCommand(initCmd)
-
-	// Flags for non-interactive mode
-	initCmd.Flags().BoolP("force", "f", false, "Force overwrite existing configuration")
-	initCmd.Flags().String("ssh-public-key", "", "Path to SSH public key for pressctl user")
-	initCmd.Flags().String("certbot-email", "", "Email for Let's Encrypt SSL certificates")
 }

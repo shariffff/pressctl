@@ -10,7 +10,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
-	"github.com/pressctl/cli/internal/config"
 	"github.com/pressctl/cli/internal/prompt"
 	"github.com/pressctl/cli/internal/state"
 	"github.com/pressctl/cli/internal/utils"
@@ -31,22 +30,7 @@ var siteCreateCmd = &cobra.Command{
 	Short:   "Create a new WordPress site",
 	Long:    `Interactively create a new WordPress site on a provisioned server.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		// Check for non-interactive mode
 		nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
@@ -97,6 +81,7 @@ var siteCreateCmd = &cobra.Command{
 			}
 		} else {
 			// Interactive prompts
+			var err error
 			input, err = prompt.PromptSiteCreate(cfg.Servers)
 			if err != nil {
 				color.Red("Error: %v", err)
@@ -124,6 +109,12 @@ var siteCreateCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Use the server's PHP version
+		sitePHPVersion := targetServer.PHPVersion
+		if sitePHPVersion == "" {
+			sitePHPVersion = models.DefaultPHPVersion
+		}
+
 		// Check for --no-ssl flag
 		skipSSL, _ := cmd.Flags().GetBool("no-ssl")
 
@@ -134,6 +125,7 @@ var siteCreateCmd = &cobra.Command{
 			"wp_admin_user":     input.AdminUser,
 			"wp_admin_email":    input.AdminEmail,
 			"wp_admin_password": input.AdminPassword,
+			"php_version":       sitePHPVersion,
 		}
 
 		// Add skip_ssl if --no-ssl flag is set
@@ -194,7 +186,7 @@ var siteCreateCmd = &cobra.Command{
 				User: input.SiteID,
 				Host: "localhost",
 			},
-			PHPVersion: "8.3",
+			PHPVersion: sitePHPVersion,
 			Metadata: models.Metadata{
 				BackupEnabled: false,
 			},
@@ -268,22 +260,7 @@ var siteListCmd = &cobra.Command{
 	Short: "List all WordPress sites",
 	Long:  `Display all WordPress sites across all servers.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		_, cfg := ensureConfig()
 
 		// Filter by server if specified
 		filterServer, _ := cmd.Flags().GetString("server")
@@ -377,22 +354,7 @@ var siteDeleteCmd = &cobra.Command{
 	Short:   "Delete a WordPress site",
 	Long:    `Delete a WordPress site and all its associated files and databases.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		// Get server and site from flags
 		serverName, _ := cmd.Flags().GetString("server")

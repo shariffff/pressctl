@@ -9,7 +9,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
-	"github.com/pressctl/cli/internal/config"
 	"github.com/pressctl/cli/internal/prompt"
 	"github.com/pressctl/cli/internal/state"
 	"github.com/pressctl/cli/internal/utils"
@@ -40,23 +39,7 @@ Examples:
   # Non-interactive mode (for automation/AI agents)
   press server add --name myserver --ip 1.2.3.4 --ssh-key ~/.ssh/id_rsa --ssh-user root`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			outputError(cmd, "Failed to create config manager", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			outputError(cmd, "Configuration file not found", fmt.Errorf("run 'press init' first"))
-			os.Exit(1)
-		}
-
-		// Load existing config
-		cfg, err := mgr.Load()
-		if err != nil {
-			outputError(cmd, "Failed to load configuration", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		var input *prompt.ServerInput
 
@@ -95,6 +78,7 @@ Examples:
 			os.Exit(1)
 		} else {
 			// Interactive mode - prompt for server details
+			var err error
 			input, err = prompt.PromptServerAdd()
 			if err != nil {
 				outputError(cmd, "Failed to get server details", err)
@@ -140,22 +124,7 @@ var serverListCmd = &cobra.Command{
 	Short: "List all servers",
 	Long:  `Display all servers in the configuration.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		_, cfg := ensureConfig()
 
 		// Check for JSON output
 		jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -224,22 +193,7 @@ and its resources will still exist in your cloud provider. You must manually
 delete the server from your cloud provider (AWS, DigitalOcean, etc.) if needed.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		if len(cfg.Servers) == 0 {
 			fmt.Println("No servers configured.")
@@ -355,22 +309,7 @@ Examples:
   press server provision --name myserver --ip 1.2.3.4 --ssh-key ~/.ssh/id_rsa --force`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			outputError(cmd, "Failed to create config manager", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			outputError(cmd, "Configuration file not found", fmt.Errorf("run 'press init' first"))
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			outputError(cmd, "Failed to load configuration", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		var targetServer *models.Server
 		var serverName string
@@ -400,10 +339,15 @@ Examples:
 			sshKey, _ := cmd.Flags().GetString("ssh-key")
 			sshUser, _ := cmd.Flags().GetString("ssh-user")
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
+			flagPHP, _ := cmd.Flags().GetString("php-version")
 
 			if sshKey == "" {
 				outputError(cmd, "Missing required flag", fmt.Errorf("--ssh-key is required in non-interactive mode"))
 				os.Exit(1)
+			}
+
+			if flagPHP == "" {
+				flagPHP = models.DefaultPHPVersion
 			}
 
 			// Check for duplicate server name
@@ -424,8 +368,9 @@ Examples:
 					Port:    sshPort,
 					KeyFile: sshKey,
 				},
-				Status: "unprovisioned",
-				Sites:  []models.Site{},
+				PHPVersion: flagPHP,
+				Status:     "unprovisioned",
+				Sites:      []models.Site{},
 			}
 
 			cfg.Servers = append(cfg.Servers, newServer)
@@ -560,9 +505,13 @@ Examples:
 		}
 
 		// Confirm provisioning
+		phpVersion := targetServer.PHPVersion
+		if phpVersion == "" {
+			phpVersion = models.DefaultPHPVersion
+		}
 		color.Cyan("About to provision server: %s (%s)", targetServer.Name, targetServer.IP)
 		fmt.Println("This will:")
-		fmt.Println("  - Install Nginx, PHP 8.3, MariaDB")
+		fmt.Printf("  - Install Nginx, PHP %s, MariaDB\n", phpVersion)
 		fmt.Println("  - Configure security (UFW, Fail2ban, SSH hardening)")
 		fmt.Println("  - Set up Certbot for SSL certificates")
 		fmt.Println("  - Create pressctl user and environment")
@@ -604,14 +553,13 @@ Examples:
 		}
 
 		// Validate required global vars are present
-		requiredVars := []string{"certbot_email", "pressctl_ssh_key"}
+		requiredVars := []string{"pressctl_ssh_key"}
 		for _, varName := range requiredVars {
 			val, exists := cfg.GlobalVars[varName]
 			if !exists || val == nil || fmt.Sprintf("%v", val) == "" {
 				color.Red("✗ Missing required configuration: %s", varName)
 				fmt.Println()
 				fmt.Println("Please ensure your configuration has the following global_vars set:")
-				fmt.Println("  - certbot_email: Email for Let's Encrypt certificates")
 				fmt.Println("  - pressctl_ssh_key: Path to SSH public key for pressctl user")
 				fmt.Println()
 				fmt.Println("Run 'press init --force' to reconfigure, or edit your config:")
@@ -626,6 +574,7 @@ Examples:
 			provisionVars[k] = v
 		}
 		provisionVars["mysql_pressctlbot_password"] = mysqlPassword
+		provisionVars["php_version"] = phpVersion
 
 		// Create Ansible executor
 		executor := ansible.NewExecutor(cfg.Ansible.Path)
@@ -686,22 +635,7 @@ Examples:
   press server health-check`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		_, cfg := ensureConfig()
 
 		if len(cfg.Servers) == 0 {
 			fmt.Println("No servers configured.")
@@ -774,22 +708,7 @@ Examples:
   press server update`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr, err := config.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			os.Exit(1)
-		}
-
-		if !mgr.ConfigExists() {
-			color.Red("Configuration file not found. Run 'press init' first.")
-			os.Exit(1)
-		}
-
-		cfg, err := mgr.Load()
-		if err != nil {
-			color.Red("Error: Failed to load configuration: %v", err)
-			os.Exit(1)
-		}
+		mgr, cfg := ensureConfig()
 
 		if len(cfg.Servers) == 0 {
 			fmt.Println("No servers configured.")
@@ -973,6 +892,7 @@ func init() {
 	serverProvisionCmd.Flags().Bool("skip-ssh-check", false, "Skip SSH connectivity check")
 	serverProvisionCmd.Flags().Bool("skip-port-check", false, "Skip port conflict check")
 	serverProvisionCmd.Flags().Bool("skip-check", false, "Skip already-provisioned check")
+	serverProvisionCmd.Flags().String("php-version", "", "PHP version to install (8.1, 8.2, 8.3, 8.4)")
 	serverProvisionCmd.Flags().Bool("json", false, "Output in JSON format")
 
 	// server health-check flags

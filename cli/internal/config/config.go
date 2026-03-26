@@ -49,8 +49,7 @@ func DefaultConfig() *Config {
 			PythonInterpreter: "/usr/bin/python3",
 		},
 		GlobalVars: map[string]interface{}{
-			"certbot_email": "",
-			"pressctl_ssh_key":  "",
+			"pressctl_ssh_key": "",
 		},
 		Servers: []models.Server{},
 		Backup: BackupConfig{

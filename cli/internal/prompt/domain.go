@@ -25,10 +25,9 @@ type DomainRemoveInput struct {
 
 // DomainSSLInput holds the input for issuing SSL
 type DomainSSLInput struct {
-	ServerName   string
-	SiteID       string
-	Domain       string
-	CertbotEmail string
+	ServerName string
+	SiteID     string
+	Domain     string
 }
 
 // PromptDomainAdd prompts for domain addition details
@@ -193,7 +192,7 @@ func PromptDomainRemove(servers []models.Server) (*DomainRemoveInput, error) {
 }
 
 // PromptDomainSSL prompts for SSL certificate issuance
-func PromptDomainSSL(servers []models.Server, defaultEmail string) (*DomainSSLInput, error) {
+func PromptDomainSSL(servers []models.Server) (*DomainSSLInput, error) {
 	input := &DomainSSLInput{}
 
 	// Build list of domains without SSL
@@ -247,16 +246,6 @@ func PromptDomainSSL(servers []models.Server, defaultEmail string) (*DomainSSLIn
 	input.ServerName = selected.ServerName
 	input.SiteID = selected.SiteID
 	input.Domain = selected.Domain.Domain
-
-	// Certbot email
-	emailPrompt := &survey.Input{
-		Message: "Email for Let's Encrypt notifications:",
-		Default: defaultEmail,
-		Help:    "Email address for certificate expiration notices",
-	}
-	if err := survey.AskOne(emailPrompt, &input.CertbotEmail, survey.WithValidator(survey.Required), survey.WithValidator(utils.ValidateEmail)); err != nil {
-		return nil, err
-	}
 
 	return input, nil
 }

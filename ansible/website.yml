@@ -59,8 +59,6 @@
       ansible.builtin.include_role:
         name: libs
         tasks_from: issue_ssl.yml
-      vars:
-        certbot_email: "{{ certbot_email | default(admin_email) }}"
       when:
         - skip_ssl is not defined or not skip_ssl
         - dns_matches_server | default(false) | bool

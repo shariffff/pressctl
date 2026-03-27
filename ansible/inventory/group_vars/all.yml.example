@@ -1,14 +1,10 @@
 ---
 # pressctl Ansible - Configuration Template
-# Copy this file to 'all.yml' and fill in your values
+# Copy this file to group_vars/all.yml and fill in your values
 
 # ============================================
 # REQUIRED VARIABLES
 # ============================================
-
-# Your email address for Let's Encrypt SSL certificates
-# This email will receive expiration notices and important updates
-certbot_email: "your-email@example.com"
 
 # Your SSH public key for the pressctl user
 # Can be either:
@@ -25,8 +21,19 @@ mysql_pressctlbot_password: "generate-a-strong-password-here"
 # OPTIONAL VARIABLES (defaults shown)
 # ============================================
 
-# Marker added to managed files (do not change after initial setup)
-ansible_managed: "Managed by pressctl"
+# Default PHP version installed on the server
+# default_php_version: "8.3"
 
-# MySQL root password (auto-generated if not set)
-# mysql_root_password: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+# Server timezone — must be a valid tz database name
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+# server_timezone: "UTC"
+
+# PHP limits
+# php_memory_limit: "256M"
+# php_upload_max_filesize: "64M"
+# php_post_max_size: "64M"
+# php_max_execution_time: 300
+
+# MariaDB settings
+# mariadb_innodb_buffer_pool_size: "256M"
+# mariadb_max_connections: 100

@@ -10,14 +10,6 @@ mariadb_performance_schema: false
 # Enable if you need replication or point-in-time recovery
 mariadb_binary_logging: false
 
-# InnoDB Buffer Pool Size
-# Recommended: 50-70% of available RAM for dedicated database servers
-# For shared WordPress hosting, keep conservative
-mariadb_innodb_buffer_pool_size: "256M"
-
-# Maximum allowed connections
-mariadb_max_connections: 100
-
 # Query cache (deprecated in MySQL 8.0, but still available in MariaDB)
 mariadb_query_cache_size: "0"
 

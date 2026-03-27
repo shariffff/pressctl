@@ -3,7 +3,7 @@ package prompt
 import (
 	"fmt"
 
-	"github.com/AlecAivazis/survey/v2"
+	"github.com/charmbracelet/huh"
 	"github.com/pressctl/cli/internal/utils"
 	"github.com/pressctl/cli/pkg/models"
 )
@@ -34,7 +34,6 @@ type DomainSSLInput struct {
 func PromptDomainAdd(servers []models.Server) (*DomainAddInput, error) {
 	input := &DomainAddInput{}
 
-	// Build list of sites
 	type SiteOption struct {
 		ServerName string
 		Site       models.Site
@@ -44,62 +43,58 @@ func PromptDomainAdd(servers []models.Server) (*DomainAddInput, error) {
 	for _, server := range servers {
 		if server.Status == "provisioned" {
 			for _, site := range server.Sites {
-				siteOptions = append(siteOptions, SiteOption{
-					ServerName: server.Name,
-					Site:       site,
-				})
+				siteOptions = append(siteOptions, SiteOption{ServerName: server.Name, Site: site})
 			}
 		}
 	}
-
 	if len(siteOptions) == 0 {
 		return nil, fmt.Errorf("no sites available. Create a site first with: press site create")
 	}
 
-	// Select site
-	optionStrings := make([]string, len(siteOptions))
+	opts := make([]huh.Option[int], len(siteOptions))
 	for i, opt := range siteOptions {
-		optionStrings[i] = fmt.Sprintf("%s on %s (%d domains)",
-			opt.Site.PrimaryDomain, opt.ServerName, len(opt.Site.Domains))
+		opts[i] = huh.NewOption(
+			fmt.Sprintf("%s on %s (%d domains)", opt.Site.PrimaryDomain, opt.ServerName, len(opt.Site.Domains)), i,
+		)
 	}
 
 	var selectedIndex int
-	selectPrompt := &survey.Select{
-		Message: "Select site to add domain to:",
-		Options: optionStrings,
-		Help:    "Choose which WordPress site should serve this domain",
+	if err := huh.NewSelect[int]().
+		Title("Select site").
+		Description("Which WordPress site should serve this domain?").
+		Options(opts...).
+		Value(&selectedIndex).
+		Run(); err != nil {
+		return nil, normalizeErr(err)
 	}
-	if err := survey.AskOne(selectPrompt, &selectedIndex); err != nil {
-		return nil, err
-	}
-
 	input.ServerName = siteOptions[selectedIndex].ServerName
 	input.SiteID = siteOptions[selectedIndex].Site.SiteID
 
-	// Domain name
-	domainPrompt := &survey.Input{
-		Message: "Domain name to add:",
-		Help:    "Enter the domain (e.g., www.example.com)",
-	}
-	if err := survey.AskOne(domainPrompt, &input.Domain, survey.WithValidator(survey.Required), survey.WithValidator(utils.ValidateDomain)); err != nil {
-		return nil, err
-	}
-
-	// Check if domain already exists
-	for _, domain := range siteOptions[selectedIndex].Site.Domains {
-		if domain.Domain == input.Domain {
-			return nil, fmt.Errorf("domain '%s' already exists on this site", input.Domain)
-		}
-	}
-
-	// Ask about SSL
-	sslPrompt := &survey.Confirm{
-		Message: "Issue SSL certificate for this domain?",
-		Default: true,
-		Help:    "Automatically obtain a Let's Encrypt SSL certificate",
-	}
-	if err := survey.AskOne(sslPrompt, &input.IssueSSL); err != nil {
-		return nil, err
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Domain name").
+				Description("e.g., www.example.com").
+				Value(&input.Domain).
+				Validate(func(s string) error {
+					if err := utils.ValidateDomain(s); err != nil {
+						return err
+					}
+					for _, domain := range siteOptions[selectedIndex].Site.Domains {
+						if domain.Domain == s {
+							return fmt.Errorf("domain '%s' already exists on this site", s)
+						}
+					}
+					return nil
+				}),
+			huh.NewConfirm().
+				Title("Issue SSL certificate for this domain?").
+				Affirmative("Yes").
+				Negative("No, skip SSL").
+				Value(&input.IssueSSL),
+		),
+	).Run(); err != nil {
+		return nil, normalizeErr(err)
 	}
 
 	return input, nil
@@ -109,7 +104,6 @@ func PromptDomainAdd(servers []models.Server) (*DomainAddInput, error) {
 func PromptDomainRemove(servers []models.Server) (*DomainRemoveInput, error) {
 	input := &DomainRemoveInput{}
 
-	// Build list of all domains
 	type DomainOption struct {
 		ServerName string
 		SiteID     string
@@ -132,53 +126,48 @@ func PromptDomainRemove(servers []models.Server) (*DomainRemoveInput, error) {
 			}
 		}
 	}
-
 	if len(domainOptions) == 0 {
 		return nil, fmt.Errorf("no domains available to remove")
 	}
 
-	// Create selection options
-	optionStrings := make([]string, len(domainOptions))
+	opts := make([]huh.Option[int], len(domainOptions))
 	for i, opt := range domainOptions {
-		sslStatus := ""
+		label := fmt.Sprintf("%s — %s on %s", opt.Domain.Domain, opt.SiteID, opt.ServerName)
 		if opt.Domain.SSLEnabled {
-			sslStatus = " [SSL]"
+			label += " [SSL]"
 		}
-		primaryMarker := ""
 		if opt.IsPrimary {
-			primaryMarker = " (PRIMARY)"
+			label += " (PRIMARY)"
 		}
-		optionStrings[i] = fmt.Sprintf("%s - %s on %s%s%s",
-			opt.Domain.Domain, opt.SiteID, opt.ServerName, sslStatus, primaryMarker)
+		opts[i] = huh.NewOption(label, i)
 	}
 
 	var selectedIndex int
-	selectPrompt := &survey.Select{
-		Message: "Select domain to remove:",
-		Options: optionStrings,
-		Help:    "Choose which domain to remove from the site",
-	}
-	if err := survey.AskOne(selectPrompt, &selectedIndex); err != nil {
-		return nil, err
+	if err := huh.NewSelect[int]().
+		Title("Select domain to remove").
+		Options(opts...).
+		Value(&selectedIndex).
+		Run(); err != nil {
+		return nil, normalizeErr(err)
 	}
 
 	selected := domainOptions[selectedIndex]
 
-	// Warn if removing primary domain
 	if selected.IsPrimary {
 		fmt.Println()
-		fmt.Println("⚠️  WARNING: You are removing the PRIMARY domain for this site!")
-		fmt.Println("This may break the WordPress installation.")
+		fmt.Println("  ⚠️  WARNING: This is the PRIMARY domain for the site.")
+		fmt.Println("  Removing it may break the WordPress installation.")
 		fmt.Println()
 
 		var confirm bool
-		if err := survey.AskOne(&survey.Confirm{
-			Message: "Are you sure you want to remove the primary domain?",
-			Default: false,
-		}, &confirm); err != nil {
-			return nil, err
+		if err := huh.NewConfirm().
+			Title("Remove the primary domain?").
+			Affirmative("Yes, remove it").
+			Negative("Cancel").
+			Value(&confirm).
+			Run(); err != nil {
+			return nil, normalizeErr(err)
 		}
-
 		if !confirm {
 			return nil, fmt.Errorf("domain removal cancelled")
 		}
@@ -195,7 +184,6 @@ func PromptDomainRemove(servers []models.Server) (*DomainRemoveInput, error) {
 func PromptDomainSSL(servers []models.Server) (*DomainSSLInput, error) {
 	input := &DomainSSLInput{}
 
-	// Build list of domains without SSL
 	type DomainOption struct {
 		ServerName string
 		SiteID     string
@@ -220,26 +208,24 @@ func PromptDomainSSL(servers []models.Server) (*DomainSSLInput, error) {
 			}
 		}
 	}
-
 	if len(domainOptions) == 0 {
 		return nil, fmt.Errorf("no domains without SSL certificates found")
 	}
 
-	// Create selection options
-	optionStrings := make([]string, len(domainOptions))
+	opts := make([]huh.Option[int], len(domainOptions))
 	for i, opt := range domainOptions {
-		optionStrings[i] = fmt.Sprintf("%s - site: %s on %s",
-			opt.Domain.Domain, opt.SiteDomain, opt.ServerName)
+		opts[i] = huh.NewOption(
+			fmt.Sprintf("%s — site: %s on %s", opt.Domain.Domain, opt.SiteDomain, opt.ServerName), i,
+		)
 	}
 
 	var selectedIndex int
-	selectPrompt := &survey.Select{
-		Message: "Select domain to issue SSL for:",
-		Options: optionStrings,
-		Help:    "Choose which domain to obtain a Let's Encrypt certificate for",
-	}
-	if err := survey.AskOne(selectPrompt, &selectedIndex); err != nil {
-		return nil, err
+	if err := huh.NewSelect[int]().
+		Title("Select domain to issue SSL for").
+		Options(opts...).
+		Value(&selectedIndex).
+		Run(); err != nil {
+		return nil, normalizeErr(err)
 	}
 
 	selected := domainOptions[selectedIndex]

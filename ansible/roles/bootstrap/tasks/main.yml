@@ -56,8 +56,8 @@
     - { key: 'LANG', value: 'en_US.UTF-8' }
 
 - name: Set timezone
-  timezone:
-    name: UTC
+  community.general.timezone:
+    name: "{{ server_timezone | default('UTC') }}"
 
 - name: Start and enable fail2ban
   ansible.builtin.systemd:

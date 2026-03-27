@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
+	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
@@ -390,12 +390,16 @@ var siteDeleteCmd = &cobra.Command{
 					opt.Site.PrimaryDomain, opt.ServerName, opt.Site.SiteID)
 			}
 
-			var selectedIndex int
-			selectPrompt := &survey.Select{
-				Message: "Select site to delete:",
-				Options: optionStrings,
+			opts := make([]huh.Option[int], len(optionStrings))
+			for i, o := range optionStrings {
+				opts[i] = huh.NewOption(o, i)
 			}
-			if err := survey.AskOne(selectPrompt, &selectedIndex); err != nil {
+			var selectedIndex int
+			if err := huh.NewSelect[int]().
+				Title("Select site to delete").
+				Options(opts...).
+				Value(&selectedIndex).
+				Run(); err != nil {
 				color.Red("Error: %v", err)
 				os.Exit(1)
 			}
@@ -444,13 +448,14 @@ var siteDeleteCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
 			var confirm bool
-			if err := survey.AskOne(&survey.Confirm{
-				Message: "Are you absolutely sure you want to delete this site?",
-				Default: false,
-			}, &confirm); err != nil {
+			if err := huh.NewConfirm().
+				Title("Are you absolutely sure you want to delete this site?").
+				Affirmative("Yes, delete permanently").
+				Negative("Cancel").
+				Value(&confirm).
+				Run(); err != nil {
 				os.Exit(1)
 			}
-
 			if !confirm {
 				fmt.Println("Site deletion cancelled")
 				return
@@ -458,16 +463,17 @@ var siteDeleteCmd = &cobra.Command{
 
 			// Double confirmation for safety
 			var doubleConfirm string
-			doublePrompt := &survey.Input{
-				Message: fmt.Sprintf("Type '%s' to confirm deletion:", targetSite.SiteID),
-			}
-			if err := survey.AskOne(doublePrompt, &doubleConfirm); err != nil {
+			if err := huh.NewInput().
+				Title(fmt.Sprintf("Type '%s' to confirm deletion", targetSite.SiteID)).
+				Value(&doubleConfirm).
+				Validate(func(s string) error {
+					if s != targetSite.SiteID {
+						return fmt.Errorf("must match site ID exactly")
+					}
+					return nil
+				}).
+				Run(); err != nil {
 				os.Exit(1)
-			}
-
-			if doubleConfirm != targetSite.SiteID {
-				color.Red("Confirmation failed. Site deletion cancelled.")
-				return
 			}
 		}
 

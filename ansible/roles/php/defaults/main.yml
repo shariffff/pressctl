@@ -2,8 +2,8 @@
 # PHP Role - Default Variables
 # Override these in group_vars/all.yml or via --extra-vars
 
-# PHP version to install (e.g., "8.3", "8.2", "8.1")
-php_version: "8.3"
+# Resolved from default_php_version in group_vars/all.yml
+php_version: "{{ default_php_version | default('8.3') }}"
 
 # PHP extensions to install (without version prefix)
 php_extensions:
@@ -31,11 +31,7 @@ php_fpm_start_servers: 5
 php_fpm_min_spare_servers: 5
 php_fpm_max_spare_servers: 35
 
-# PHP limits
-php_upload_max_filesize: "64M"
-php_post_max_size: "64M"
-php_memory_limit: "256M"
-php_max_execution_time: 300
+# PHP limits (set in group_vars/all.yml; advanced options below)
 php_max_input_vars: 3000
 
 # PHP disabled functions for security

@@ -7,7 +7,7 @@ import (
 func TestValidateDomain(t *testing.T) {
 	tests := []struct {
 		name    string
-		domain  interface{}
+		domain  string
 		wantErr bool
 	}{
 		{"valid domain", "example.com", false},
@@ -23,7 +23,6 @@ func TestValidateDomain(t *testing.T) {
 		{"invalid - double dots", "example..com", true},
 		{"invalid - spaces", "example .com", true},
 		{"invalid - single char tld", "example.c", true},
-		{"invalid type", 123, true},
 	}
 
 	for _, tt := range tests {
@@ -39,7 +38,7 @@ func TestValidateDomain(t *testing.T) {
 func TestValidateSiteID(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   interface{}
+		input   string
 		wantErr bool
 	}{
 		{"valid short name", "abc", false},
@@ -52,7 +51,6 @@ func TestValidateSiteID(t *testing.T) {
 		{"invalid - has underscore", "my_site", true},
 		{"invalid - has space", "my site", true},
 		{"invalid - has special char", "mysite!", true},
-		{"invalid type", 123, true},
 	}
 
 	for _, tt := range tests {
@@ -68,7 +66,7 @@ func TestValidateSiteID(t *testing.T) {
 func TestValidateEmail(t *testing.T) {
 	tests := []struct {
 		name    string
-		email   interface{}
+		email   string
 		wantErr bool
 	}{
 		{"valid email", "user@example.com", false},
@@ -81,7 +79,6 @@ func TestValidateEmail(t *testing.T) {
 		{"invalid - no user", "@example.com", true},
 		{"invalid - spaces", "user @example.com", true},
 		{"invalid - double @", "user@@example.com", true},
-		{"invalid type", 123, true},
 	}
 
 	for _, tt := range tests {
@@ -97,7 +94,7 @@ func TestValidateEmail(t *testing.T) {
 func TestValidatePasswordStrength(t *testing.T) {
 	tests := []struct {
 		name     string
-		password interface{}
+		password string
 		wantErr  bool
 	}{
 		{"valid password", "MyP@ssword123", false},
@@ -109,7 +106,6 @@ func TestValidatePasswordStrength(t *testing.T) {
 		{"invalid - no number", "MyP@sswordabc", true},
 		{"invalid - no special", "MyPassword123", true},
 		{"invalid - only lowercase", "mypassword!!", true},
-		{"invalid type", 123, true},
 	}
 
 	for _, tt := range tests {
@@ -125,7 +121,7 @@ func TestValidatePasswordStrength(t *testing.T) {
 func TestValidateIP(t *testing.T) {
 	tests := []struct {
 		name    string
-		ip      interface{}
+		ip      string
 		wantErr bool
 	}{
 		{"valid IPv4", "192.168.1.1", false},
@@ -138,7 +134,6 @@ func TestValidateIP(t *testing.T) {
 		{"invalid - out of range", "256.1.1.1", true},
 		{"invalid - letters", "abc.def.ghi.jkl", true},
 		{"invalid - domain name", "example.com", true},
-		{"invalid type", 123, true},
 	}
 
 	for _, tt := range tests {
@@ -154,18 +149,18 @@ func TestValidateIP(t *testing.T) {
 func TestValidatePort(t *testing.T) {
 	tests := []struct {
 		name    string
-		port    interface{}
+		port    string
 		wantErr bool
 	}{
-		{"valid port 22", 22, false},
-		{"valid port 80", 80, false},
-		{"valid port 443", 443, false},
-		{"valid port 1", 1, false},
-		{"valid port max", 65535, false},
-		{"invalid - zero", 0, true},
-		{"invalid - negative", -1, true},
-		{"invalid - too large", 65536, true},
-		{"invalid type", "22", true},
+		{"valid port 22", "22", false},
+		{"valid port 80", "80", false},
+		{"valid port 443", "443", false},
+		{"valid port 1", "1", false},
+		{"valid port max", "65535", false},
+		{"invalid - zero", "0", true},
+		{"invalid - negative", "-1", true},
+		{"invalid - too large", "65536", true},
+		{"invalid - not a number", "abc", true},
 	}
 
 	for _, tt := range tests {

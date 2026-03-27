@@ -1,12 +1,55 @@
 ---
-# pressctl Ansible - Global Variables
-# See inventory/group_vars/all.yml.example for documentation
+# pressctl — Server Configuration
+# Edit this file to configure your WordPress hosting environment.
+# Most defaults work well for small-to-medium sites; tune based on your server resources.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUIRED — set these before running any playbook
+# ─────────────────────────────────────────────────────────────────────────────
+
+# SSH public key granted access to the pressctl system user
+# Accepts key content (e.g. "ssh-ed25519 AAAA...") or a file path
+pressctl_ssh_key: ''
+
+# MySQL password for the pressctlbot admin user
+mysql_pressctlbot_password: ''
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STACK
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Default PHP version installed on the server and used by all sites
+# Changing this after provisioning requires re-running the php role
+default_php_version: "8.3"
+
+# Server timezone — must be a valid tz database name (e.g. "America/New_York", "Europe/London")
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+server_timezone: "UTC"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHP
+# ─────────────────────────────────────────────────────────────────────────────
+
+php_memory_limit: "256M"
+php_upload_max_filesize: "64M"
+php_post_max_size: "64M"
+php_max_execution_time: 300
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────────────────────────────────────────
+
+# InnoDB buffer pool — aim for 50–70% of total RAM on dedicated DB servers
+mariadb_innodb_buffer_pool_size: "256M"
+mariadb_max_connections: 100
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERNAL — do not change
+# ─────────────────────────────────────────────────────────────────────────────
 
 ansible_managed: 'Managed by pressctl'
 mysql_root_password: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
-
-# REQUIRED: Set these variables before running playbooks
-# When using the CLI, these are passed via the inventory file
-# When running Ansible directly, set them here or pass via --extra-vars
-mysql_pressctlbot_password: ''
-pressctl_ssh_key: ''

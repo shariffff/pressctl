@@ -3,7 +3,6 @@
   hosts: all
   become: true
   vars:
-    certbot_email: 'test@molecule.local'
     pressctl_ssh_key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7fake+key+for+molecule+testing+only+not+a+real+key+do+not+use+in+production+abcdefghijklmnopqrstuvwxyz1234567890 molecule@test'
   roles:
     - role: bootstrap

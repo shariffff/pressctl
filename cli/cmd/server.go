@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/AlecAivazis/survey/v2"
+	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
@@ -215,15 +215,18 @@ delete the server from your cloud provider (AWS, DigitalOcean, etc.) if needed.`
 				options[i] = fmt.Sprintf("%s (%s) - %d %s", server.Name, server.IP, siteCount, siteLabel)
 			}
 
-			var selected int
-			selectPrompt := &survey.Select{
-				Message: "Select a server to remove:",
-				Options: options,
+			opts := make([]huh.Option[int], len(options))
+			for i, o := range options {
+				opts[i] = huh.NewOption(o, i)
 			}
-			if err := survey.AskOne(selectPrompt, &selected); err != nil {
+			var selected int
+			if err := huh.NewSelect[int]().
+				Title("Select a server to remove").
+				Options(opts...).
+				Value(&selected).
+				Run(); err != nil {
 				os.Exit(1)
 			}
-
 			serverName = cfg.Servers[selected].Name
 		} else {
 			serverName = args[0]
@@ -264,13 +267,14 @@ delete the server from your cloud provider (AWS, DigitalOcean, etc.) if needed.`
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
 			var confirm bool
-			if err := survey.AskOne(&survey.Confirm{
-				Message: fmt.Sprintf("Remove server '%s' from inventory?", serverName),
-				Default: false,
-			}, &confirm); err != nil {
+			if err := huh.NewConfirm().
+				Title(fmt.Sprintf("Remove server '%s' from inventory?", serverName)).
+				Affirmative("Yes, remove").
+				Negative("Cancel").
+				Value(&confirm).
+				Run(); err != nil {
 				os.Exit(1)
 			}
-
 			if !confirm {
 				fmt.Println("Server removal cancelled")
 				return
@@ -429,13 +433,14 @@ Examples:
 			skipCheck, _ := cmd.Flags().GetBool("skip-check")
 			if !skipCheck {
 				var confirm bool
-				if err := survey.AskOne(&survey.Confirm{
-					Message: "Provision again anyway?",
-					Default: false,
-				}, &confirm); err != nil {
+				if err := huh.NewConfirm().
+					Title("Provision again anyway?").
+					Affirmative("Yes, reprovision").
+					Negative("Cancel").
+					Value(&confirm).
+					Run(); err != nil {
 					os.Exit(1)
 				}
-
 				if !confirm {
 					fmt.Println("Provisioning cancelled")
 					return
@@ -487,10 +492,12 @@ Examples:
 				force, _ := cmd.Flags().GetBool("force")
 				if !force {
 					var proceed bool
-					if err := survey.AskOne(&survey.Confirm{
-						Message: "Proceed anyway?",
-						Default: false,
-					}, &proceed); err != nil {
+					if err := huh.NewConfirm().
+						Title("Proceed anyway?").
+						Affirmative("Yes, proceed").
+						Negative("Cancel").
+						Value(&proceed).
+						Run(); err != nil {
 						os.Exit(1)
 					}
 					if !proceed {
@@ -520,13 +527,14 @@ Examples:
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
 			var confirm bool
-			if err := survey.AskOne(&survey.Confirm{
-				Message: "Continue with provisioning?",
-				Default: true,
-			}, &confirm); err != nil {
+			if err := huh.NewConfirm().
+				Title("Continue with provisioning?").
+				Affirmative("Yes, provision").
+				Negative("Cancel").
+				Value(&confirm).
+				Run(); err != nil {
 				os.Exit(1)
 			}
-
 			if !confirm {
 				fmt.Println("Provisioning cancelled")
 				return
@@ -651,12 +659,16 @@ Examples:
 				options[i] = fmt.Sprintf("%s (%s) - %s", server.Name, server.IP, server.Status)
 			}
 
-			var selected int
-			selectPrompt := &survey.Select{
-				Message: "Select a server to check:",
-				Options: options,
+			opts := make([]huh.Option[int], len(options))
+			for i, o := range options {
+				opts[i] = huh.NewOption(o, i)
 			}
-			if err := survey.AskOne(selectPrompt, &selected); err != nil {
+			var selected int
+			if err := huh.NewSelect[int]().
+				Title("Select a server to check").
+				Options(opts...).
+				Value(&selected).
+				Run(); err != nil {
 				os.Exit(1)
 			}
 			serverName = cfg.Servers[selected].Name
@@ -724,12 +736,16 @@ Examples:
 				options[i] = fmt.Sprintf("%s (%s)", server.Name, server.IP)
 			}
 
-			var selected int
-			selectPrompt := &survey.Select{
-				Message: "Select a server to update:",
-				Options: options,
+			opts := make([]huh.Option[int], len(options))
+			for i, o := range options {
+				opts[i] = huh.NewOption(o, i)
 			}
-			if err := survey.AskOne(selectPrompt, &selected); err != nil {
+			var selected int
+			if err := huh.NewSelect[int]().
+				Title("Select a server to update").
+				Options(opts...).
+				Value(&selected).
+				Run(); err != nil {
 				os.Exit(1)
 			}
 			serverName = cfg.Servers[selected].Name
@@ -757,12 +773,33 @@ Examples:
 		fmt.Println("Leave blank to keep current value.")
 
 		// Update fields interactively
-		var newName string
-		namePrompt := &survey.Input{
-			Message: "Server name:",
-			Default: server.Name,
-		}
-		if err := survey.AskOne(namePrompt, &newName); err != nil {
+		var newName = server.Name
+		var newIP = server.IP
+		var newSSHUser = server.SSH.User
+		var newSSHKey = server.SSH.KeyFile
+		var newSSHPort = fmt.Sprintf("%d", server.SSH.Port)
+
+		if err := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Server name").
+					Value(&newName),
+				huh.NewInput().
+					Title("IP address").
+					Value(&newIP).
+					Validate(utils.ValidateIP),
+				huh.NewInput().
+					Title("SSH user").
+					Value(&newSSHUser),
+				huh.NewInput().
+					Title("SSH key file").
+					Value(&newSSHKey),
+				huh.NewInput().
+					Title("SSH port").
+					Value(&newSSHPort).
+					Validate(utils.ValidatePort),
+			),
+		).Run(); err != nil {
 			os.Exit(1)
 		}
 
@@ -776,41 +813,6 @@ Examples:
 			}
 		}
 
-		var newIP string
-		ipPrompt := &survey.Input{
-			Message: "IP address:",
-			Default: server.IP,
-		}
-		if err := survey.AskOne(ipPrompt, &newIP, survey.WithValidator(utils.ValidateIP)); err != nil {
-			os.Exit(1)
-		}
-
-		var newSSHUser string
-		userPrompt := &survey.Input{
-			Message: "SSH user:",
-			Default: server.SSH.User,
-		}
-		if err := survey.AskOne(userPrompt, &newSSHUser); err != nil {
-			os.Exit(1)
-		}
-
-		var newSSHKey string
-		keyPrompt := &survey.Input{
-			Message: "SSH key file:",
-			Default: server.SSH.KeyFile,
-		}
-		if err := survey.AskOne(keyPrompt, &newSSHKey); err != nil {
-			os.Exit(1)
-		}
-
-		var newSSHPort string
-		portPrompt := &survey.Input{
-			Message: "SSH port:",
-			Default: fmt.Sprintf("%d", server.SSH.Port),
-		}
-		if err := survey.AskOne(portPrompt, &newSSHPort); err != nil {
-			os.Exit(1)
-		}
 		var port int
 		fmt.Sscanf(newSSHPort, "%d", &port)
 		if port == 0 {
@@ -828,13 +830,14 @@ Examples:
 		fmt.Println()
 
 		var confirm bool
-		if err := survey.AskOne(&survey.Confirm{
-			Message: "Save changes?",
-			Default: true,
-		}, &confirm); err != nil {
+		if err := huh.NewConfirm().
+			Title("Save changes?").
+			Affirmative("Yes, save").
+			Negative("Cancel").
+			Value(&confirm).
+			Run(); err != nil {
 			os.Exit(1)
 		}
-
 		if !confirm {
 			fmt.Println("Update cancelled")
 			return

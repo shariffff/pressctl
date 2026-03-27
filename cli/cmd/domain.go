@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
+	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
@@ -245,13 +245,14 @@ Examples:
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
 			var confirm bool
-			if err := survey.AskOne(&survey.Confirm{
-				Message: "Remove this domain?",
-				Default: false,
-			}, &confirm); err != nil {
+			if err := huh.NewConfirm().
+				Title("Remove this domain?").
+				Affirmative("Yes, remove").
+				Negative("Cancel").
+				Value(&confirm).
+				Run(); err != nil {
 				os.Exit(1)
 			}
-
 			if !confirm {
 				fmt.Println("Domain removal cancelled")
 				return

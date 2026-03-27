@@ -26,11 +26,12 @@ const repoURL = "github.com/shariffff/pressctl"
 // menuModel is a Bubble Tea model for the main menu.
 // Supports arrow keys, vim keys (j/k), number shortcuts, and live type-to-filter.
 type menuModel struct {
-	items   []string
-	visible []int  // indices into items that match current filter
-	cursor  int    // position within visible
-	filter  string // current search string
-	chosen  int    // -1 = pending, -2 = cancelled, >=0 = index into items
+	items    []string
+	visible  []int  // indices into items that match current filter
+	cursor   int    // position within visible
+	filter   string // current search string
+	chosen   int    // -1 = pending, -2 = cancelled, >=0 = index into items
+	showMore bool   // whether to show the full command reference
 }
 
 func newMenuModel(items []string) menuModel {
@@ -66,10 +67,29 @@ func (m menuModel) Init() tea.Cmd { return nil }
 func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// When showing more, any key returns to menu (q/Q quits)
+		if m.showMore {
+			switch msg.String() {
+			case "q", "Q", "ctrl+c":
+				m.chosen = -2
+				return m, tea.Quit
+			default:
+				m.showMore = false
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			m.chosen = -2
 			return m, tea.Quit
+
+		case "q", "Q":
+			m.chosen = -2
+			return m, tea.Quit
+
+		case "m", "M":
+			m.showMore = true
 
 		case "esc":
 			if m.filter != "" {
@@ -146,11 +166,41 @@ func (m menuModel) View() string {
 	var b strings.Builder
 
 	// Header
+	fmt.Fprintf(&b, "\n  %spressctl%s  %s%s%s\n\n", bold, reset, dim, repoURL, reset)
+
+	if m.showMore {
+		// Full command reference view
+		type entry struct{ cmd, desc string }
+		commands := []entry{
+			{"press", "Launch interactive menu"},
+			{"press server add", "Add a new server without provisioning"},
+			{"press server list", "List all servers"},
+			{"press server remove <name>", "Remove a server from configuration"},
+			{"press server provision <name>", "Provision a server"},
+			{"press site create", "Create a new WordPress site"},
+			{"press site list", "List all sites"},
+			{"press site delete", "Delete a site"},
+			{"press domain add", "Add a domain to a site"},
+			{"press domain remove", "Remove a domain from a site"},
+			{"press domain ssl", "Issue / renew SSL certificate"},
+			{"press config show", "Show current configuration"},
+			{"press config validate", "Validate configuration"},
+			{"press config edit", "Open configuration in editor"},
+			{"press version", "Show version information"},
+			{"press --help", "Show help for any command"},
+		}
+
+		fmt.Fprintf(&b, "  %sCOMMANDS%s\n", bold, reset)
+		for _, e := range commands {
+			fmt.Fprintf(&b, "  %s%-36s%s%s%s\n", cyan, e.cmd, reset, dim+e.desc, reset)
+		}
+		fmt.Fprintf(&b, "\n  %spress any key to return%s\n", dim, reset)
+		return b.String()
+	}
+
+	// Filter indicator in header
 	if m.filter != "" {
-		fmt.Fprintf(&b, "\n  %spressctl%s  %s%s%s   %s/ %s_%s\n\n",
-			bold, reset, dim, repoURL, reset, yellow, m.filter, reset)
-	} else {
-		fmt.Fprintf(&b, "\n  %spressctl%s  %s%s%s\n\n", bold, reset, dim, repoURL, reset)
+		fmt.Fprintf(&b, "  %s/ %s_%s\n\n", yellow, m.filter, reset)
 	}
 
 	// Items (only visible ones)
@@ -169,9 +219,9 @@ func (m menuModel) View() string {
 
 	// Footer
 	if m.filter != "" {
-		fmt.Fprintf(&b, "\n  %s↑↓ navigate  enter select  esc clear filter%s\n", dim, reset)
+		fmt.Fprintf(&b, "\n  %s↑↓ navigate  enter select  esc clear filter  Q quit%s\n", dim, reset)
 	} else {
-		fmt.Fprintf(&b, "\n  %s↑↓ navigate  enter or number to select  type to filter%s\n", dim, reset)
+		fmt.Fprintf(&b, "\n  %s↑↓ navigate  enter or number  type to filter  M more  Q quit%s\n", dim, reset)
 	}
 
 	return b.String()

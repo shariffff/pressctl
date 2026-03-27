@@ -26,6 +26,11 @@ func ensureConfig() (*config.Manager, *config.Config) {
 			color.Red("Error: Failed to load configuration: %v", err)
 			os.Exit(1)
 		}
+		if migrated, err := config.MigrateIfNeeded(mgr, cfg); err != nil {
+			color.Yellow("Warning: Config migration failed: %v", err)
+		} else if migrated {
+			color.Cyan("→ Config migrated to schema v%s", config.SchemaVersion)
+		}
 		return mgr, cfg
 	}
 

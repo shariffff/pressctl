@@ -187,6 +187,7 @@ func (m menuModel) View() string {
 			{"press config validate", "Validate configuration"},
 			{"press config edit", "Open configuration in editor"},
 			{"press version", "Show version information"},
+			{"press update", "Update press to the latest version"},
 			{"press --help", "Show help for any command"},
 		}
 

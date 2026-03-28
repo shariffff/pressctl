@@ -5,7 +5,6 @@
   vars:
     # Mock test variables
     mysql_pressctlbot_password: 'MoleculeTestPass123!'
-    pressctl_ssh_key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7fake+key+for+molecule+testing+only+not+a+real+key+do+not+use+in+production+abcdefghijklmnopqrstuvwxyz1234567890 molecule@test'
   roles:
     - role: bootstrap
     - role: database

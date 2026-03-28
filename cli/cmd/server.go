@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
@@ -451,6 +453,24 @@ Examples:
 		// Pre-flight SSH check
 		skipSSH, _ := cmd.Flags().GetBool("skip-ssh-check")
 		if !skipSSH {
+			if Debug {
+				keyFile := targetServer.SSH.KeyFile
+				if strings.HasPrefix(keyFile, "~") {
+					if homeDir, err := os.UserHomeDir(); err == nil {
+						keyFile = filepath.Join(homeDir, keyFile[1:])
+					}
+				}
+				fmt.Println("[debug] SSH config:")
+				fmt.Printf("  user:     %s\n", targetServer.SSH.User)
+				fmt.Printf("  host:     %s:%d\n", targetServer.IP, targetServer.SSH.Port)
+				fmt.Printf("  key file: %s\n", keyFile)
+				if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+					color.Red("  [debug] key file does not exist!")
+				} else {
+					fmt.Println("  [debug] key file exists ✓")
+				}
+				fmt.Println()
+			}
 			fmt.Println("Checking SSH connectivity...")
 			if err := utils.TestSSHConnection(*targetServer); err != nil {
 				color.Red("✗ SSH connectivity check failed: %v", err)
@@ -560,23 +580,7 @@ Examples:
 			}
 		}
 
-		// Validate required global vars are present
-		requiredVars := []string{"pressctl_ssh_key"}
-		for _, varName := range requiredVars {
-			val, exists := cfg.GlobalVars[varName]
-			if !exists || val == nil || fmt.Sprintf("%v", val) == "" {
-				color.Red("✗ Missing required configuration: %s", varName)
-				fmt.Println()
-				fmt.Println("Please ensure your configuration has the following global_vars set:")
-				fmt.Println("  - pressctl_ssh_key: Path to SSH public key for pressctl user")
-				fmt.Println()
-				fmt.Println("Run 'press init --force' to reconfigure, or edit your config:")
-				fmt.Printf("  %s %s\n", getEditor(), mgr.GetConfigPath())
-				os.Exit(1)
-			}
-		}
-
-		// Create a copy of global vars and add the server-specific MySQL password
+		// Build provision vars
 		provisionVars := make(map[string]interface{})
 		for k, v := range cfg.GlobalVars {
 			provisionVars[k] = v

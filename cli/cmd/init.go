@@ -7,7 +7,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/pressctl/cli/internal/config"
 	"github.com/pressctl/cli/internal/installer"
-	"github.com/pressctl/cli/internal/prompt"
 )
 
 // ensureConfig loads the config, auto-initializing on first use if needed.
@@ -51,18 +50,10 @@ func ensureConfig() (*config.Manager, *config.Config) {
 		color.Green("✓")
 	}
 
-	// Auto-detect SSH public key
-	initInput, err := prompt.PromptInitSetup()
-	if err != nil {
-		color.Red("Error: %v", err)
-		os.Exit(1)
-	}
-
 	// Create config
 	fmt.Print("→ Creating configuration... ")
 	cfg := config.DefaultConfig()
 	cfg.Ansible.Path = installer.GetAnsibleDir()
-	cfg.GlobalVars["pressctl_ssh_key"] = initInput.SSHPublicKey
 
 	if err := mgr.Save(cfg); err != nil {
 		color.Red("✗")

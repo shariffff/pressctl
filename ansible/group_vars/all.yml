@@ -7,10 +7,6 @@
 # REQUIRED — set these before running any playbook
 # ─────────────────────────────────────────────────────────────────────────────
 
-# SSH public key granted access to the pressctl system user
-# Accepts key content (e.g. "ssh-ed25519 AAAA...") or a file path
-pressctl_ssh_key: ''
-
 # MySQL password for the pressctlbot admin user
 mysql_pressctlbot_password: ''
 

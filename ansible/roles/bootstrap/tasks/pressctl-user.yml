@@ -19,12 +19,22 @@
     create_home: true
     state: present
 
-- name: Set up authorized key for pressctl
-  ansible.posix.authorized_key:
-    user: pressctl
-    key: "{{ lookup('file', pressctl_ssh_key) if pressctl_ssh_key is match('.*\\.(pub|pem)$') or pressctl_ssh_key.startswith('~') or pressctl_ssh_key.startswith('/') else pressctl_ssh_key }}"
-    state: present
-    manage_dir: true
+- name: Ensure pressctl .ssh directory exists
+  ansible.builtin.file:
+    path: /home/pressctl/.ssh
+    state: directory
+    owner: pressctl
+    group: pressctl
+    mode: '0700'
+
+- name: Copy root authorized_keys to pressctl user
+  ansible.builtin.copy:
+    src: /root/.ssh/authorized_keys
+    dest: /home/pressctl/.ssh/authorized_keys
+    owner: pressctl
+    group: pressctl
+    mode: '0600'
+    remote_src: true
 
 - name: Configure sudoers for pressctl
   ansible.builtin.copy:

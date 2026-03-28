@@ -48,9 +48,7 @@ func DefaultConfig() *Config {
 			InventoryPath:     "/tmp/pressctl-inventory-{timestamp}.ini",
 			PythonInterpreter: "/usr/bin/python3",
 		},
-		GlobalVars: map[string]interface{}{
-			"pressctl_ssh_key": "",
-		},
+		GlobalVars: map[string]interface{}{},
 		Servers: []models.Server{},
 		Backup: BackupConfig{
 			Enabled: false,

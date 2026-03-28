@@ -19,6 +19,7 @@ var (
 	// Global flags
 	Verbose bool
 	DryRun  bool
+	Debug   bool
 )
 
 const repoURL = "github.com/shariffff/pressctl"
@@ -305,4 +306,5 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().BoolVar(&DryRun, "dry-run", false, "Show what would be done without making changes")
+	rootCmd.PersistentFlags().BoolVar(&Debug, "debug", false, "Enable debug output (show SSH config, ansible command, etc.)")
 }

@@ -8,11 +8,9 @@
       ansible.builtin.assert:
         that:
           - mysql_pressctlbot_password is defined and mysql_pressctlbot_password | length > 0
-          - pressctl_ssh_key is defined and pressctl_ssh_key | length > 0
         fail_msg: |
           Required variables are missing or empty. Please set:
             - mysql_pressctlbot_password: MySQL admin password
-            - pressctl_ssh_key: SSH public key for pressctl user
           Set these in group_vars/all.yml or pass via --extra-vars
   roles:
     - { role: bootstrap, tags: 'bootstrap' }

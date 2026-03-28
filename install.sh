@@ -210,9 +210,9 @@ main() {
     echo ""
     echo "Run the following to get started:"
     echo ""
-    echo -e "  ${BOLD}source ~/.$(basename $SHELL)rc && press init${NC}"
+    echo -e "  ${BOLD}source ~/.$(basename $SHELL)rc${NC}"
     echo ""
-    echo -e "${DIM}Or restart your terminal and run: press init${NC}"
+    echo -e "${DIM}Or restart your terminal, then run: press${NC}"
     echo ""
 }
 

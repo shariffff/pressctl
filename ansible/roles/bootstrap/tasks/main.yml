@@ -2,16 +2,16 @@
 - name: Setup pressctl user
   ansible.builtin.import_tasks: pressctl-user.yml
 
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 300
-
-- name: Installing required packages
+- name: Install required packages
   ansible.builtin.apt:
     name: '{{ required_packages }}'
     state: present
+    update_cache: true
     cache_valid_time: 3600
+  register: apt_result
+  until: apt_result is success
+  retries: 3
+  delay: 5
 
 - name: Add Certbot cronjob for Certificate renewal
   ansible.builtin.cron:

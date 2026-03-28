@@ -2,8 +2,6 @@ package prompt
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,36 +17,12 @@ type ServerInput struct {
 	IP         string
 	SSHUser    string
 	SSHPort    int
-	SSHKey     string
 	PHPVersion string
 }
 
 // PromptServerAdd prompts for server details
 func PromptServerAdd() (*ServerInput, error) {
 	input := &ServerInput{}
-
-	// SSH key selection (conditional — must happen before the main form)
-	sshKeys, err := findSSHKeys()
-	if err != nil || len(sshKeys) == 0 {
-		homeDir, _ := os.UserHomeDir()
-		input.SSHKey = filepath.Join(homeDir, ".ssh", "id_rsa")
-	} else if len(sshKeys) == 1 {
-		input.SSHKey = sshKeys[0]
-		fmt.Printf("Using SSH key: %s\n", sshKeys[0])
-	} else {
-		opts := make([]huh.Option[string], len(sshKeys))
-		for i, k := range sshKeys {
-			opts[i] = huh.NewOption(k, k)
-		}
-		if err := huh.NewSelect[string]().
-			Title("SSH private key").
-			Description("Select the key to use for authentication").
-			Options(opts...).
-			Value(&input.SSHKey).
-			Run(); err != nil {
-			return nil, normalizeErr(err)
-		}
-	}
 
 	// Main form: name, IP, SSH user, SSH port, PHP version
 	var portStr string
@@ -120,42 +94,6 @@ func PromptServerAdd() (*ServerInput, error) {
 	return input, nil
 }
 
-// findSSHKeys looks for private SSH keys in ~/.ssh/
-func findSSHKeys() ([]string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(filepath.Join(homeDir, ".ssh"))
-	if err != nil {
-		return nil, err
-	}
-
-	var keys []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasSuffix(name, ".pub") ||
-			name == "known_hosts" || name == "known_hosts.old" ||
-			name == "config" || name == "authorized_keys" || name == "environment" {
-			continue
-		}
-		keyPath := filepath.Join(homeDir, ".ssh", name)
-		content, err := os.ReadFile(keyPath)
-		if err != nil {
-			continue
-		}
-		if strings.HasPrefix(string(content), "-----BEGIN") {
-			keys = append(keys, keyPath)
-		}
-	}
-
-	return keys, nil
-}
-
 // ToServer converts ServerInput to models.Server
 func (si *ServerInput) ToServer() models.Server {
 	phpVersion := si.PHPVersion
@@ -167,9 +105,8 @@ func (si *ServerInput) ToServer() models.Server {
 		Hostname: si.Hostname,
 		IP:       si.IP,
 		SSH: models.SSHConfig{
-			User:    si.SSHUser,
-			Port:    si.SSHPort,
-			KeyFile: si.SSHKey,
+			User: si.SSHUser,
+			Port: si.SSHPort,
 		},
 		PHPVersion: phpVersion,
 		Status:     "unprovisioned",
@@ -181,7 +118,6 @@ func confirmServerAdd(input *ServerInput) error {
 	fmt.Println()
 	fmt.Printf("  Name:        %s\n", input.Name)
 	fmt.Printf("  IP:          %s\n", input.IP)
-	fmt.Printf("  SSH Key:     %s\n", input.SSHKey)
 	fmt.Printf("  SSH User:    %s\n", input.SSHUser)
 	fmt.Printf("  SSH Port:    %d\n", input.SSHPort)
 	fmt.Printf("  PHP Version: %s\n", input.PHPVersion)

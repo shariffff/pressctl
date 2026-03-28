@@ -11,6 +11,10 @@
       - python3-mysqldb
     state: present
     update_cache: true
+  register: mariadb_install
+  until: mariadb_install is success
+  retries: 3
+  delay: 5
 
 - name: Ensure MariaDB service is started and enabled
   ansible.builtin.systemd:

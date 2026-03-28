@@ -10,6 +10,10 @@
     url: https://nginx.org/keys/nginx_signing.key
     dest: /etc/apt/keyrings/nginx.asc
     mode: "0644"
+  register: nginx_key
+  until: nginx_key is success
+  retries: 3
+  delay: 5
 
 - name: Add Nginx repository
   ansible.builtin.apt_repository:
@@ -18,16 +22,19 @@
     update_cache: true
   register: result
   until: result is success
-  retries: 2
+  retries: 3
   delay: 5
 
 - name: Install Nginx and certbot
-  apt:
+  ansible.builtin.apt:
     name:
       - nginx
       - python3-certbot-nginx
     state: present
-    update_cache: true
+  register: nginx_install
+  until: nginx_install is success
+  retries: 3
+  delay: 5
 
 - name: Set ACL permissions for nginx directory
   acl:
@@ -51,23 +58,15 @@
     mode: "0644"
   notify: restart nginx
 
-- name: Create global directory
-  file:
-    path: /etc/nginx/global
+- name: Create Nginx directories
+  ansible.builtin.file:
+    path: "{{ item }}"
     state: directory
     mode: "0755"
-
-- name: Create sites-available directory
-  file:
-    path: /etc/nginx/sites-available
-    state: directory
-    mode: "0755"
-
-- name: Create sites-enabled directory
-  file:
-    path: /etc/nginx/sites-enabled
-    state: directory
-    mode: "0755"
+  loop:
+    - /etc/nginx/global
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
 
 - name: Generate default SSL certificate
   command: openssl req -x509 -nodes -days 1095 -newkey rsa:2048 -keyout /etc/nginx/sites-available/.no-default.key -out /etc/nginx/sites-available/.no-default.crt -subj "/C=US/O=pressctl"

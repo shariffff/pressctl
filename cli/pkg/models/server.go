@@ -4,9 +4,8 @@ import "time"
 
 // SSHConfig holds SSH connection details for a server
 type SSHConfig struct {
-	User    string `yaml:"user" validate:"required"`
-	Port    int    `yaml:"port" validate:"required,min=1,max=65535"`
-	KeyFile string `yaml:"key_file" validate:"required"`
+	User string `yaml:"user" validate:"required"`
+	Port int    `yaml:"port" validate:"required,min=1,max=65535"`
 }
 
 // ServerCredentials holds server-specific credentials

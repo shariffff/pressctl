@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
@@ -39,7 +37,7 @@ Examples:
   press server add
 
   # Non-interactive mode (for automation/AI agents)
-  press server add --name myserver --ip 1.2.3.4 --ssh-key ~/.ssh/id_rsa --ssh-user root`,
+  press server add --name myserver --ip 1.2.3.4 --ssh-user root`,
 	Run: func(cmd *cobra.Command, args []string) {
 		mgr, cfg := ensureConfig()
 
@@ -51,20 +49,13 @@ Examples:
 
 		if name != "" && ip != "" {
 			// Non-interactive mode
-			sshKey, _ := cmd.Flags().GetString("ssh-key")
 			sshUser, _ := cmd.Flags().GetString("ssh-user")
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
-
-			if sshKey == "" {
-				outputError(cmd, "Missing required flag", fmt.Errorf("--ssh-key is required in non-interactive mode"))
-				os.Exit(1)
-			}
 
 			input = &prompt.ServerInput{
 				Name:     name,
 				Hostname: ip,
 				IP:       ip,
-				SSHKey:   sshKey,
 				SSHUser:  sshUser,
 				SSHPort:  sshPort,
 			}
@@ -312,7 +303,7 @@ Examples:
   press server provision myserver
 
   # Non-interactive mode - add and provision new server (for automation/AI agents)
-  press server provision --name myserver --ip 1.2.3.4 --ssh-key ~/.ssh/id_rsa --force`,
+  press server provision --name myserver --ip 1.2.3.4 --force`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		mgr, cfg := ensureConfig()
@@ -342,15 +333,9 @@ Examples:
 			}
 		} else if flagName != "" && flagIP != "" {
 			// Non-interactive mode: create new server from flags
-			sshKey, _ := cmd.Flags().GetString("ssh-key")
 			sshUser, _ := cmd.Flags().GetString("ssh-user")
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
 			flagPHP, _ := cmd.Flags().GetString("php-version")
-
-			if sshKey == "" {
-				outputError(cmd, "Missing required flag", fmt.Errorf("--ssh-key is required in non-interactive mode"))
-				os.Exit(1)
-			}
 
 			if flagPHP == "" {
 				flagPHP = models.DefaultPHPVersion
@@ -370,9 +355,8 @@ Examples:
 				Hostname: flagIP,
 				IP:       flagIP,
 				SSH: models.SSHConfig{
-					User:    sshUser,
-					Port:    sshPort,
-					KeyFile: sshKey,
+					User: sshUser,
+					Port: sshPort,
 				},
 				PHPVersion: flagPHP,
 				Status:     "unprovisioned",
@@ -454,21 +438,9 @@ Examples:
 		skipSSH, _ := cmd.Flags().GetBool("skip-ssh-check")
 		if !skipSSH {
 			if Debug {
-				keyFile := targetServer.SSH.KeyFile
-				if strings.HasPrefix(keyFile, "~") {
-					if homeDir, err := os.UserHomeDir(); err == nil {
-						keyFile = filepath.Join(homeDir, keyFile[1:])
-					}
-				}
 				fmt.Println("[debug] SSH config:")
 				fmt.Printf("  user:     %s\n", targetServer.SSH.User)
 				fmt.Printf("  host:     %s:%d\n", targetServer.IP, targetServer.SSH.Port)
-				fmt.Printf("  key file: %s\n", keyFile)
-				if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-					color.Red("  [debug] key file does not exist!")
-				} else {
-					fmt.Println("  [debug] key file exists ✓")
-				}
 				fmt.Println()
 			}
 			fmt.Println("Checking SSH connectivity...")
@@ -477,7 +449,7 @@ Examples:
 				fmt.Println()
 				fmt.Println("Please verify:")
 				fmt.Println("  1. Server is reachable")
-				fmt.Println("  2. SSH key file exists and has correct permissions")
+				fmt.Println("  2. SSH agent is running with your key loaded (ssh-add -l)")
 				fmt.Println("  3. SSH user has access to the server")
 				fmt.Println()
 				fmt.Println("Use --skip-ssh-check to bypass this check (not recommended)")
@@ -780,7 +752,6 @@ Examples:
 		var newName = server.Name
 		var newIP = server.IP
 		var newSSHUser = server.SSH.User
-		var newSSHKey = server.SSH.KeyFile
 		var newSSHPort = fmt.Sprintf("%d", server.SSH.Port)
 
 		if err := huh.NewForm(
@@ -795,9 +766,6 @@ Examples:
 				huh.NewInput().
 					Title("SSH user").
 					Value(&newSSHUser),
-				huh.NewInput().
-					Title("SSH key file").
-					Value(&newSSHKey),
 				huh.NewInput().
 					Title("SSH port").
 					Value(&newSSHPort).
@@ -829,7 +797,6 @@ Examples:
 		fmt.Printf("  Name:     %s\n", newName)
 		fmt.Printf("  IP:       %s\n", newIP)
 		fmt.Printf("  SSH User: %s\n", newSSHUser)
-		fmt.Printf("  SSH Key:  %s\n", newSSHKey)
 		fmt.Printf("  SSH Port: %d\n", port)
 		fmt.Println()
 
@@ -852,7 +819,6 @@ Examples:
 		server.Hostname = newIP
 		server.IP = newIP
 		server.SSH.User = newSSHUser
-		server.SSH.KeyFile = newSSHKey
 		server.SSH.Port = port
 
 		// Save config
@@ -877,7 +843,6 @@ func init() {
 	// server add flags (non-interactive mode)
 	serverAddCmd.Flags().String("name", "", "Server name")
 	serverAddCmd.Flags().String("ip", "", "Server IP address")
-	serverAddCmd.Flags().String("ssh-key", "", "Path to SSH private key")
 	serverAddCmd.Flags().String("ssh-user", "root", "SSH user")
 	serverAddCmd.Flags().Int("ssh-port", 22, "SSH port")
 	serverAddCmd.Flags().Bool("json", false, "Output in JSON format")
@@ -892,7 +857,6 @@ func init() {
 	// server provision flags
 	serverProvisionCmd.Flags().String("name", "", "Server name (for non-interactive mode)")
 	serverProvisionCmd.Flags().String("ip", "", "Server IP address")
-	serverProvisionCmd.Flags().String("ssh-key", "", "Path to SSH private key")
 	serverProvisionCmd.Flags().String("ssh-user", "root", "SSH user")
 	serverProvisionCmd.Flags().Int("ssh-port", 22, "SSH port")
 	serverProvisionCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
@@ -908,7 +872,6 @@ func init() {
 	// server update flags
 	serverUpdateCmd.Flags().String("name", "", "New server name")
 	serverUpdateCmd.Flags().String("ip", "", "New IP address")
-	serverUpdateCmd.Flags().String("ssh-key", "", "New SSH private key path")
 	serverUpdateCmd.Flags().String("ssh-user", "", "New SSH user")
 	serverUpdateCmd.Flags().Int("ssh-port", 0, "New SSH port")
 	serverUpdateCmd.Flags().Bool("json", false, "Output in JSON format")

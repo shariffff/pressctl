@@ -224,7 +224,8 @@ var siteCreateCmd = &cobra.Command{
 			}
 			fmt.Println()
 			fmt.Println("Next steps:")
-			fmt.Printf("  1. Add www subdomain: press domain add\n")
+			fmt.Printf("  1. Update your DNS records to point to %s\n", targetServer.IP)
+			fmt.Printf("  2. Add www subdomain: press domain add\n")
 		} else if result.DNSStatus != nil && !result.DNSStatus.Matches {
 			// DNS doesn't match - show instructions
 			color.Yellow("\n⚠️  SSL not issued: DNS not pointing to this server")
@@ -238,12 +239,14 @@ var siteCreateCmd = &cobra.Command{
 				input.ServerName, input.SiteID, input.Domain)
 		} else if skipSSL {
 			fmt.Println("Next steps:")
-			fmt.Printf("  1. Add www subdomain: press domain add\n")
-			fmt.Printf("  2. Issue SSL certificate: press domain ssl\n")
+			fmt.Printf("  1. Update your DNS records to point to %s\n", targetServer.IP)
+			fmt.Printf("  2. Add www subdomain: press domain add\n")
+			fmt.Printf("  3. Issue SSL certificate: press domain ssl\n")
 		} else {
 			fmt.Println("Next steps:")
-			fmt.Printf("  1. Add www subdomain: press domain add\n")
-			fmt.Printf("  2. Issue SSL certificate: press domain ssl\n")
+			fmt.Printf("  1. Update your DNS records to point to %s\n", targetServer.IP)
+			fmt.Printf("  2. Add www subdomain: press domain add\n")
+			fmt.Printf("  3. Issue SSL certificate: press domain ssl\n")
 		}
 	},
 }

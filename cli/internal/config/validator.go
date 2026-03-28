@@ -92,6 +92,18 @@ func (v *Validator) ValidateAnsibleEnvironment(config *Config) error {
 		}
 	}
 
+	// Check if roles directory exists
+	rolesPath := filepath.Join(ansiblePath, "roles")
+	if _, err := os.Stat(rolesPath); os.IsNotExist(err) {
+		return fmt.Errorf("roles directory not found: %s", rolesPath)
+	}
+
+	// Check if group_vars/all.yml exists
+	allVarsPath := filepath.Join(ansiblePath, "group_vars", "all.yml")
+	if _, err := os.Stat(allVarsPath); os.IsNotExist(err) {
+		return fmt.Errorf("group_vars/all.yml not found: %s", allVarsPath)
+	}
+
 	return nil
 }
 

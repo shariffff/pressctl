@@ -8,7 +8,6 @@
 
 [webservers:vars]
 ansible_user={{ .Server.SSH.User }}
-ansible_ssh_private_key_file={{ .Server.SSH.KeyFile }}
 ansible_port={{ .Server.SSH.Port }}
 ansible_python_interpreter={{ .PythonInterpreter }}
 {{ range $key, $value := .GlobalVars }}{{ $key }}={{ $value }}

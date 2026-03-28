@@ -55,19 +55,12 @@ func (ig *InventoryGenerator) Generate(server models.Server, command string, glo
 		homeDir = "" // Will skip home expansion if we can't get it
 	}
 
-	// Expand home directory in global vars (especially pressctl_ssh_key)
+	// Expand home directory in global vars
 	for key, val := range varsMap {
 		if strings.HasPrefix(val, "~") && homeDir != "" {
 			varsMap[key] = filepath.Join(homeDir, val[1:])
 		}
 	}
-
-	// Expand home directory in SSH key file
-	sshKeyFile := server.SSH.KeyFile
-	if strings.HasPrefix(sshKeyFile, "~") && homeDir != "" {
-		sshKeyFile = filepath.Join(homeDir, sshKeyFile[1:])
-	}
-	server.SSH.KeyFile = sshKeyFile
 
 	// Prepare template data
 	data := InventoryData{

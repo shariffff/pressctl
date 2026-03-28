@@ -22,7 +22,7 @@ mysql_pressctlbot_password: "generate-a-strong-password-here"
 # ============================================
 
 # Default PHP version installed on the server
-# default_php_version: "8.3"
+# php_version: "8.3"
 
 # Server timezone — must be a valid tz database name
 # Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones

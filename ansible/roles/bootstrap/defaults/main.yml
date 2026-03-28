@@ -1,13 +1,2 @@
 ---
-required_packages:
-  - acl
-  - gnupg
-  - cron
-  - fail2ban
-  - locales
-  - redis-server
-  - software-properties-common
-  - certbot
-  - tzdata
-  - unattended-upgrades
-  - unzip
+# All defaults are defined in group_vars/all.yml

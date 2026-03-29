@@ -205,6 +205,43 @@ main() {
     install_pressctl
     setup_shell
 
+    # Check if ansible is installed
+    if ! command -v ansible >/dev/null 2>&1; then
+        echo ""
+        warn "Ansible is not installed. pressctl requires Ansible to run."
+        echo ""
+        local os=$(detect_os)
+        case $os in
+            darwin)
+                echo "  Install with Homebrew:"
+                echo -e "  ${BOLD}brew install ansible${NC}"
+                ;;
+            linux)
+                if command -v apt-get >/dev/null 2>&1; then
+                    echo "  Install with apt:"
+                    echo -e "  ${BOLD}sudo apt update && sudo apt install -y ansible${NC}"
+                elif command -v dnf >/dev/null 2>&1; then
+                    echo "  Install with dnf:"
+                    echo -e "  ${BOLD}sudo dnf install -y ansible${NC}"
+                elif command -v yum >/dev/null 2>&1; then
+                    echo "  Install with yum:"
+                    echo -e "  ${BOLD}sudo yum install -y ansible${NC}"
+                elif command -v pacman >/dev/null 2>&1; then
+                    echo "  Install with pacman:"
+                    echo -e "  ${BOLD}sudo pacman -S ansible${NC}"
+                else
+                    echo "  Install with pip:"
+                    echo -e "  ${BOLD}pip install ansible${NC}"
+                fi
+                ;;
+            *)
+                echo "  Install with pip:"
+                echo -e "  ${BOLD}pip install ansible${NC}"
+                ;;
+        esac
+        echo ""
+    fi
+
     echo ""
     echo -e "${GREEN}pressctl was installed successfully!${NC}"
     echo ""

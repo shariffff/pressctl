@@ -1,5 +1,8 @@
+"use client";
+
 import CopyButton from "@/components/ui/CopyButton";
 import GitHubIcon from "@/components/ui/GitHubIcon";
+import posthog from "posthog-js";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/shariffff/pressctl/main/install.sh | bash";
@@ -30,6 +33,7 @@ export default function HowItWorks() {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-white bg-accent/10 border border-accent/20 rounded-lg hover:bg-accent/20 transition-all"
+            onClick={() => posthog.capture("github_link_clicked", { source: "how_it_works" })}
           >
             <GitHubIcon className="w-4 h-4" />
             View on GitHub
@@ -37,6 +41,7 @@ export default function HowItWorks() {
           <a
             href="/docs"
             className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+            onClick={() => posthog.capture("docs_link_clicked", { source: "how_it_works" })}
           >
             Read the docs
           </a>

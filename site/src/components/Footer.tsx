@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import GitHubIcon from "@/components/ui/GitHubIcon";
+import posthog from "posthog-js";
 
 export default function Footer() {
   return (
@@ -24,6 +27,7 @@ export default function Footer() {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors"
+            onClick={() => posthog.capture("github_link_clicked", { source: "footer" })}
           >
             <GitHubIcon className="w-4 h-4" />
             GitHub

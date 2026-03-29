@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Copy, Check } from "lucide-react";
+import posthog from "posthog-js";
 
 interface CopyButtonProps {
   text: string;
@@ -14,6 +15,7 @@ export default function CopyButton({ text }: CopyButtonProps) {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    posthog.capture("command_copied", { text: text.slice(0, 100) });
   };
 
   return (

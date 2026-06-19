@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# FrankenPHP site config for {{ domain }}. Caddy obtains and renews the TLS
+# certificate automatically once DNS for the domain points at this server.
+{{ site_domains | default([domain]) | join(', ') }} {
+	root * /sites/{{ domain }}/files
+	encode zstd gzip
+	php_server
+}

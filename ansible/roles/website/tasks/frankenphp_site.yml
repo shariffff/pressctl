@@ -1,0 +1,24 @@
+---
+# FrankenPHP site config: drop a per-domain Caddy snippet and reload the shared
+# FrankenPHP container so it picks up the new site. TLS is automatic via Caddy.
+
+- name: Set FrankenPHP paths
+  ansible.builtin.set_fact:
+    fp_compose: /etc/frankenphp/docker-compose.yml
+    fp_service: frankenphp
+    fp_sites_dir: /etc/frankenphp/sites
+
+- name: Deploy Caddy site config for {{ domain }}
+  ansible.builtin.template:
+    src: site.caddy.j2
+    dest: "{{ fp_sites_dir }}/{{ domain }}.caddy"
+    owner: root
+    group: root
+    mode: "0644"
+  register: fp_site_config
+
+- name: Reload FrankenPHP container to apply site config
+  ansible.builtin.command:
+    cmd: docker compose -f {{ fp_compose }} restart {{ fp_service }}
+  changed_when: true
+  when: fp_site_config is changed

@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Additional domain {{ domain }} for the site rooted at /sites/{{ site_domain }}/files.
+# Caddy obtains TLS automatically once DNS for {{ domain }} points here.
+{{ domain }} {
+	root * /sites/{{ site_domain }}/files
+	encode zstd gzip
+	php_server
+}

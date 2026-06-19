@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+services:
+  {{ frankenphp_service }}:
+    build:
+      context: {{ frankenphp_dir }}
+      args:
+        PHP_VERSION: "{{ php_version }}"
+    image: {{ frankenphp_image }}
+    container_name: {{ frankenphp_container_name }}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    # Lets WordPress reach the host-installed MariaDB at host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /sites:/sites
+      - {{ frankenphp_dir }}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - {{ frankenphp_sites_dir }}:{{ frankenphp_sites_dir }}:ro
+      - {{ frankenphp_dir }}/data:/data
+      - {{ frankenphp_dir }}/config:/config

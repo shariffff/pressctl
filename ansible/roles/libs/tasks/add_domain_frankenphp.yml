@@ -1,0 +1,29 @@
+---
+# Add an additional domain to a FrankenPHP site by dropping a Caddy snippet that
+# serves the same WordPress root. TLS is issued automatically by Caddy.
+
+- name: Assert required variables are defined
+  ansible.builtin.assert:
+    that:
+      - domain is defined and domain != ""
+      - site_domain is defined and site_domain != ""
+    fail_msg: "Required variables missing: domain and site_domain must be provided for add_domain (frankenphp)"
+    success_msg: "All required variables are properly defined"
+  tags: add_domain
+
+- name: Deploy Caddy config for additional domain {{ domain }}
+  ansible.builtin.template:
+    src: site-alias.caddy.j2
+    dest: "/etc/frankenphp/sites/{{ domain }}.caddy"
+    owner: root
+    group: root
+    mode: "0644"
+  register: fp_alias_config
+  tags: add_domain
+
+- name: Reload FrankenPHP container
+  ansible.builtin.command:
+    cmd: docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp
+  changed_when: true
+  when: fp_alias_config is changed
+  tags: add_domain

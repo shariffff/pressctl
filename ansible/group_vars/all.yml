@@ -15,8 +15,17 @@ mysql_pressctlbot_password: ''
 # STACK
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Web/runtime stack for the server. Chosen per-server (the CLI passes this via
+# --extra-vars based on the server's configured stack).
+#   traditional : host-installed Nginx + PHP-FPM, Certbot for TLS (default)
+#   frankenphp  : a Docker container running FrankenPHP (Caddy + PHP) that serves
+#                 all sites and obtains TLS automatically; MariaDB/Redis stay on
+#                 the host. PHP runs inside the container, not on the host.
+stack: "traditional"
+
 # Default PHP version installed on the server and used by all sites
 # Changing this after provisioning requires re-running the php role
+# For the frankenphp stack this selects the FrankenPHP image's PHP version.
 php_version: "8.3"
 
 # Server timezone — must be a valid tz database name (e.g. "America/New_York", "Europe/London")

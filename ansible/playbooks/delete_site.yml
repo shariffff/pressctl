@@ -8,6 +8,8 @@
     site_user: '{{ site_id }}'
     site_group: '{{ site_id }}'
     site_home: '/sites/{{ site_domain }}'
+    is_frankenphp: "{{ stack | default('traditional') == 'frankenphp' }}"
+    frankenphp_compose_file: /etc/frankenphp/docker-compose.yml
 
   pre_tasks:
     - name: Validate required variables
@@ -24,11 +26,21 @@
           Pass these via --extra-vars
 
   tasks:
-    - name: Remove cron job
+    - name: Remove cron job (traditional)
       ansible.builtin.cron:
-        name: '{{ site_domain }}'
+        name: 'wp-cron-{{ site_domain }}'
+        user: '{{ site_user }}'
         state: absent
       ignore_errors: true
+      when: not is_frankenphp | bool
+
+    - name: Remove cron job (frankenphp)
+      ansible.builtin.cron:
+        name: 'wp-cron-{{ site_domain }}'
+        user: root
+        state: absent
+      ignore_errors: true
+      when: is_frankenphp | bool
 
     - name: Remove WordPress files
       ansible.builtin.file:
@@ -47,6 +59,7 @@
     - name: Drop MySQL user
       community.mysql.mysql_user:
         name: '{{ db_user }}'
+        host_all: true
         state: absent
         login_host: "{{ db_host.split(':')[0] }}"
         login_port: "{{ db_host.split(':')[1] | default('3306') }}"
@@ -58,17 +71,43 @@
         path: '{{ site_home }}'
         state: absent
 
+    # Traditional web layer
     - name: Remove Nginx site configuration
       ansible.builtin.file:
-        path: '/etc/nginx/sites-enabled/{{ site_domain }}.conf'
+        path: '/etc/nginx/sites-enabled/{{ site_domain }}'
         state: absent
       notify: Reload nginx
+      when: not is_frankenphp | bool
+
+    - name: Remove Nginx site directory
+      ansible.builtin.file:
+        path: '/etc/nginx/sites-available/{{ site_domain }}'
+        state: absent
+      notify: Reload nginx
+      when: not is_frankenphp | bool
 
     - name: Remove PHP-FPM pool configuration
       ansible.builtin.file:
-        path: '/etc/php/8.3/fpm/pool.d/{{ site_id }}.conf'
+        path: '/etc/php/{{ php_version | default("8.3") }}/fpm/pool.d/{{ site_id }}.conf'
         state: absent
       notify: Reload php-fpm
+      when: not is_frankenphp | bool
+
+    # FrankenPHP web layer
+    - name: Remove Caddy site configuration
+      ansible.builtin.file:
+        path: '/etc/frankenphp/sites/{{ site_domain }}.caddy'
+        state: absent
+      register: caddy_removed
+      when: is_frankenphp | bool
+
+    - name: Reload FrankenPHP container
+      ansible.builtin.command:
+        cmd: docker compose -f {{ frankenphp_compose_file }} restart frankenphp
+      changed_when: true
+      when:
+        - is_frankenphp | bool
+        - caddy_removed is changed
 
     - name: Remove site user
       ansible.builtin.user:
@@ -90,5 +129,5 @@
 
     - name: Reload php-fpm
       ansible.builtin.service:
-        name: php8.3-fpm
+        name: php{{ php_version | default('8.3') }}-fpm
         state: reloaded

@@ -20,33 +20,69 @@
           Pass via --extra-vars "operation=add_domain"
 
   tasks:
+    # Traditional (Nginx + Certbot) operations
     - name: Add domain to Nginx
       ansible.builtin.include_role:
         name: libs
         tasks_from: add_domain.yml
-      when: operation == 'add_domain'
+      when:
+        - operation == 'add_domain'
+        - stack | default('traditional') == 'traditional'
       tags: add_domain
 
     - name: Remove domain from Nginx
       ansible.builtin.include_role:
         name: libs
         tasks_from: remove_domain.yml
-      when: operation == 'remove_domain'
+      when:
+        - operation == 'remove_domain'
+        - stack | default('traditional') == 'traditional'
       tags: remove_domain
 
     - name: Issue SSL certificate
       ansible.builtin.include_role:
         name: libs
         tasks_from: issue_ssl.yml
-      when: operation == 'issue_ssl'
+      when:
+        - operation == 'issue_ssl'
+        - stack | default('traditional') == 'traditional'
       tags: issue_ssl
 
     - name: Reload Nginx configuration
       ansible.builtin.service:
         name: nginx
         state: reloaded
-      when: nginx_config_changed is defined and nginx_config_changed
+      when:
+        - stack | default('traditional') == 'traditional'
+        - nginx_config_changed is defined and nginx_config_changed
       tags:
         - add_domain
         - remove_domain
         - issue_ssl
+
+    # FrankenPHP (Caddy) operations — TLS is automatic, issue_ssl is a no-op
+    - name: Add domain to FrankenPHP
+      ansible.builtin.include_role:
+        name: libs
+        tasks_from: add_domain_frankenphp.yml
+      when:
+        - operation == 'add_domain'
+        - stack | default('traditional') == 'frankenphp'
+      tags: add_domain
+
+    - name: Remove domain from FrankenPHP
+      ansible.builtin.include_role:
+        name: libs
+        tasks_from: remove_domain_frankenphp.yml
+      when:
+        - operation == 'remove_domain'
+        - stack | default('traditional') == 'frankenphp'
+      tags: remove_domain
+
+    - name: SSL is automatic on FrankenPHP (no action)
+      ansible.builtin.debug:
+        msg: "FrankenPHP serves TLS automatically via Caddy; no Certbot issuance needed for {{ domain }}."
+      when:
+        - operation == 'issue_ssl'
+        - stack | default('traditional') == 'frankenphp'
+      tags: issue_ssl

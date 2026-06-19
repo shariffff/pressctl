@@ -1,0 +1,9 @@
+---
+# Restart (rather than hot-reload) keeps this dependency-free: it re-reads the
+# Caddyfile and all imported per-site configs without needing tooling inside the
+# container. Config changes are infrequent, so the brief restart is acceptable.
+- name: reload frankenphp
+  ansible.builtin.command:
+    cmd: docker compose -f {{ frankenphp_compose_file }} restart {{ frankenphp_service }}
+  changed_when: true
+  listen: reload frankenphp

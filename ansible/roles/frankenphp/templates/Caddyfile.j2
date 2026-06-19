@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# Base FrankenPHP / Caddy configuration.
+# Per-site server blocks live in {{ frankenphp_sites_dir }}/<domain>.caddy and
+# are pulled in by the import directive below.
+{
+	frankenphp
+{% if certbot_email is defined and certbot_email | length > 0 %}
+	email {{ certbot_email }}
+{% endif %}
+}
+
+# Site configs (one file per domain). The placeholder .keep.caddy keeps this
+# glob non-empty on a freshly provisioned server with no sites yet.
+import {{ frankenphp_sites_dir }}/*.caddy

@@ -1,0 +1,37 @@
+---
+# FrankenPHP Role Defaults
+# These can be overridden in group_vars/all.yml or via --extra-vars.
+
+# Base directory holding the FrankenPHP Caddyfile, per-site configs and compose file
+frankenphp_dir: /etc/frankenphp
+
+# Directory (mounted into the container) holding one <domain>.caddy file per site
+frankenphp_sites_dir: "{{ frankenphp_dir }}/sites"
+
+# Upstream FrankenPHP image, pinned to the requested PHP version
+frankenphp_base_image: "dunglas/frankenphp:php{{ php_version }}"
+
+# Locally built image tag (adds WordPress PHP extensions + WP-CLI)
+frankenphp_image: "pressctl/frankenphp:php{{ php_version }}"
+
+# Compose service / container name
+frankenphp_service: frankenphp
+frankenphp_container_name: pressctl-frankenphp
+frankenphp_compose_file: "{{ frankenphp_dir }}/docker-compose.yml"
+
+# PHP extensions installed into the image via install-php-extensions.
+# Mirrors the host php_extensions list (group_vars/all.yml) minus fpm/cli which
+# are not applicable to the FrankenPHP runtime.
+frankenphp_php_extensions:
+  - bcmath
+  - exif
+  - gd
+  - igbinary
+  - imagick
+  - intl
+  - mysqli
+  - opcache
+  - pdo_mysql
+  - redis
+  - soap
+  - zip

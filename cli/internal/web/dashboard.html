@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pressctl dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d1117'/%3E%3Ctext x='50' y='72' font-size='64' text-anchor='middle' fill='%2358a6ff' font-family='monospace'%3Ep%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #ffffff;
+    --panel-2: #f6f8fa;
+    --border: #d8dee4;
+    --text: #1f2328;
+    --muted: #656d76;
+    --accent: #0969da;
+    --green: #1a7f37;
+    --amber: #9a6700;
+    --red: #cf222e;
+    --radius: 12px;
+    --sidebar: 232px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .layout { display: flex; min-height: 100vh; }
+
+  /* Sidebar menu */
+  .sidebar {
+    width: var(--sidebar);
+    flex: 0 0 var(--sidebar);
+    border-right: 1px solid var(--border);
+    background: var(--panel-2);
+    padding: 24px 16px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+  }
+  .brand { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; padding: 0 8px 20px; }
+  .brand span { color: var(--accent); }
+  .nav { display: flex; flex-direction: column; gap: 4px; }
+  .nav button {
+    font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 9px 12px; color: var(--text); display: flex; align-items: center; gap: 10px;
+    transition: background .12s, border-color .12s;
+  }
+  .nav button:hover { background: rgba(9,105,218,.06); }
+  .nav button.active { background: #fff; border-color: var(--border); font-weight: 600; }
+  .nav button .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+  /* Main content */
+  .main { flex: 1; min-width: 0; padding: 32px 36px 64px; max-width: 1100px; }
+  .page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .page-sub { color: var(--muted); font-size: 13px; margin-bottom: 26px; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 30px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+  .stat .n { font-size: 28px; font-weight: 700; line-height: 1; }
+  .stat .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.ok { color: var(--green); background: rgba(26,127,55,.10); }
+  .badge.warn { color: var(--amber); background: rgba(154,103,0,.10); }
+  .badge.err { color: var(--red); background: rgba(207,34,46,.10); }
+  .badge.flat::before { display: none; }
+  .badge.flat { color: var(--muted); background: var(--panel-2); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 12px 18px; font-size: 14px; border-top: 1px solid var(--border); }
+  thead th { border-top: none; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; background: var(--panel-2); }
+  tbody tr:hover { background: var(--panel-2); }
+  .domain-main { font-weight: 600; }
+  .domain-list { color: var(--muted); font-size: 12px; }
+  .site-admin { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .site-admin a { color: var(--accent); }
+  .site-notes { color: var(--amber); font-size: 12px; margin-top: 4px; font-style: italic; }
+  td.num { white-space: nowrap; }
+  td code, .server-meta code { color: var(--text); background: var(--panel-2); padding: 2px 7px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border); }
+
+  .empty { padding: 40px 20px; color: var(--muted); font-size: 14px; text-align: center; }
+
+  .copy {
+    font: inherit; font-size: 12px; cursor: pointer;
+    color: var(--text); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 9px; display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color .15s, color .15s;
+  }
+  .copy:hover { border-color: var(--accent); color: var(--accent); }
+  .copy.copied { color: var(--green); border-color: var(--green); }
+
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">press<span>ctl</span></div>
+    <nav class="nav">
+      <button data-view="dashboard" class="active">Dashboard <span class="count">{{ .SiteCount }}</span></button>
+      <button data-view="servers">Servers <span class="count">{{ .ServerCount }}</span></button>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <!-- Dashboard: flat list of all sites -->
+    <section class="view active" id="view-dashboard">
+      <h1 class="page-title">Dashboard</h1>
+      <div class="page-sub">All sites across every server · refreshed {{ .Now }}</div>
+
+      <div class="stats">
+        <div class="stat"><div class="n">{{ .SiteCount }}</div><div class="l">Sites</div></div>
+        <div class="stat"><div class="n">{{ .ServerCount }}</div><div class="l">Servers</div></div>
+        <div class="stat"><div class="n">{{ .DomainCount }}</div><div class="l">Domains</div></div>
+        <div class="stat"><div class="n">{{ .SSLCount }}</div><div class="l">SSL enabled</div></div>
+      </div>
+
+      <div class="card">
+        {{ if .Sites }}
+        <table>
+          <thead>
+            <tr><th>Site</th><th>Domains</th><th>Server</th><th>SSL</th><th>PHP</th><th>Database</th><th>Backup</th><th>Created</th></tr>
+          </thead>
+          <tbody>
+            {{ range .Sites }}
+            <tr>
+              <td><span class="domain-main">{{ .SiteID }}</span></td>
+              <td>
+                <div class="domain-main"><a href="https://{{ .PrimaryDomain }}" target="_blank" rel="noopener">{{ .PrimaryDomain }}</a></div>
+                {{ if .ExtraDomains }}<div class="domain-list">{{ .ExtraDomains }}</div>{{ end }}
+                <div class="site-admin">admin: {{ .AdminUser }} · <a href="{{ .AdminURL }}" target="_blank" rel="noopener">wp-admin ↗</a></div>
+                {{ if .Notes }}<div class="site-notes">{{ .Notes }}</div>{{ end }}
+              </td>
+              <td class="num">{{ .ServerName }}</td>
+              <td>
+                {{ if eq .SSLState "ok" }}<span class="badge ok">{{ .SSLLabel }}</span>
+                {{ else if eq .SSLState "warn" }}<span class="badge warn">{{ .SSLLabel }}</span>
+                {{ else if eq .SSLState "err" }}<span class="badge err">{{ .SSLLabel }}</span>
+                {{ else }}<span class="badge flat">{{ .SSLLabel }}</span>{{ end }}
+              </td>
+              <td class="num">{{ .PHPVersion }}</td>
+              <td class="num">{{ .Database }}</td>
+              <td class="num">{{ .BackupLabel }}</td>
+              <td class="num">{{ .Created }}</td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+        {{ else }}
+        <div class="empty">No sites yet. Run <code>press site create</code> to add one.</div>
+        {{ end }}
+      </div>
+    </section>
+
+    <!-- Servers: just the servers, site count, provisioned at -->
+    <section class="view" id="view-servers">
+      <h1 class="page-title">Servers</h1>
+      <div class="page-sub">{{ .ServerCount }} server(s) · refreshed {{ .Now }}</div>
+
+      <div class="card">
+        {{ if .Servers }}
+        <table>
+          <thead>
+            <tr><th>Server</th><th>Status</th><th>IP</th><th>Sites</th><th>Provisioned</th><th></th></tr>
+          </thead>
+          <tbody>
+            {{ range .Servers }}
+            <tr>
+              <td>
+                <div class="domain-main">{{ .Name }}</div>
+                <div class="domain-list">{{ .Hostname }}</div>
+              </td>
+              <td>
+                {{ if eq .Status "provisioned" }}<span class="badge ok">provisioned</span>
+                {{ else if eq .Status "error" }}<span class="badge err">error</span>
+                {{ else }}<span class="badge warn">{{ .Status }}</span>{{ end }}
+              </td>
+              <td class="num"><code>{{ .IP }}</code></td>
+              <td class="num">{{ .SiteCount }}</td>
+              <td class="num">{{ .Provisioned }}</td>
+              <td class="num"><button class="copy" data-copy="{{ .SSHCommand }}">⧉ Copy SSH</button></td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+        {{ else }}
+        <div class="empty">No servers yet. Run <code>press server provision</code> to add one.</div>
+        {{ end }}
+      </div>
+    </section>
+
+    <footer>pressctl · read-only view of {{ .ConfigPath }}</footer>
+  </main>
+</div>
+
+<script>
+  // Sidebar menu navigation between views.
+  document.querySelectorAll(".nav button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var target = btn.getAttribute("data-view");
+      document.querySelectorAll(".nav button").forEach(function (b) { b.classList.toggle("active", b === btn); });
+      document.querySelectorAll(".view").forEach(function (v) {
+        v.classList.toggle("active", v.id === "view-" + target);
+      });
+      location.hash = target;
+    });
+  });
+  // Honor deep-link via hash (#servers / #dashboard).
+  if (location.hash) {
+    var initial = document.querySelector('.nav button[data-view="' + location.hash.slice(1) + '"]');
+    if (initial) initial.click();
+  }
+
+  // Copy-to-clipboard buttons.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".copy");
+    if (!btn) return;
+    var text = btn.getAttribute("data-copy");
+    navigator.clipboard.writeText(text).then(function () {
+      var label = btn.textContent;
+      btn.textContent = "✓ Copied";
+      btn.classList.add("copied");
+      setTimeout(function () {
+        btn.textContent = label;
+        btn.classList.remove("copied");
+      }, 1200);
+    });
+  });
+</script>
+</body>
+</html>

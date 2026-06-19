@@ -51,6 +51,15 @@ Examples:
 			// Non-interactive mode
 			sshUser, _ := cmd.Flags().GetString("ssh-user")
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
+			stack, _ := cmd.Flags().GetString("stack")
+
+			if stack == "" {
+				stack = models.DefaultStack
+			}
+			if !models.IsValidStack(stack) {
+				outputError(cmd, "Invalid stack", fmt.Errorf("unknown stack '%s'; supported: %v", stack, models.SupportedStacks))
+				os.Exit(1)
+			}
 
 			input = &prompt.ServerInput{
 				Name:     name,
@@ -58,6 +67,7 @@ Examples:
 				IP:       ip,
 				SSHUser:  sshUser,
 				SSHPort:  sshPort,
+				Stack:    stack,
 			}
 
 			if input.SSHUser == "" {
@@ -336,9 +346,17 @@ Examples:
 			sshUser, _ := cmd.Flags().GetString("ssh-user")
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
 			flagPHP, _ := cmd.Flags().GetString("php-version")
+			flagStack, _ := cmd.Flags().GetString("stack")
 
 			if flagPHP == "" {
 				flagPHP = models.DefaultPHPVersion
+			}
+			if flagStack == "" {
+				flagStack = models.DefaultStack
+			}
+			if !models.IsValidStack(flagStack) {
+				outputError(cmd, "Invalid stack", fmt.Errorf("unknown stack '%s'; supported: %v", flagStack, models.SupportedStacks))
+				os.Exit(1)
 			}
 
 			// Check for duplicate server name
@@ -359,6 +377,7 @@ Examples:
 					Port: sshPort,
 				},
 				PHPVersion: flagPHP,
+				Stack:      flagStack,
 				Status:     "unprovisioned",
 				Sites:      []models.Site{},
 			}
@@ -508,12 +527,20 @@ Examples:
 		if phpVersion == "" {
 			phpVersion = models.DefaultPHPVersion
 		}
+		stack := targetServer.EffectiveStack()
 		color.Cyan("About to provision server: %s (%s)", targetServer.Name, targetServer.IP)
 		fmt.Println("This will:")
-		fmt.Printf("  - Install Nginx, PHP %s, MariaDB\n", phpVersion)
-		fmt.Println("  - Configure security (UFW, Fail2ban, SSH hardening)")
-		fmt.Println("  - Set up Certbot for SSL certificates")
-		fmt.Println("  - Create pressctl user and environment")
+		if stack == models.StackFrankenPHP {
+			fmt.Printf("  - Install Docker and run FrankenPHP %s (Caddy, automatic HTTPS)\n", phpVersion)
+			fmt.Println("  - Install MariaDB and Redis on the host")
+			fmt.Println("  - Configure security (UFW, Fail2ban, SSH hardening)")
+			fmt.Println("  - Create pressctl user and environment")
+		} else {
+			fmt.Printf("  - Install Nginx, PHP %s, MariaDB\n", phpVersion)
+			fmt.Println("  - Configure security (UFW, Fail2ban, SSH hardening)")
+			fmt.Println("  - Set up Certbot for SSL certificates")
+			fmt.Println("  - Create pressctl user and environment")
+		}
 		fmt.Println()
 
 		force, _ := cmd.Flags().GetBool("force")
@@ -559,6 +586,7 @@ Examples:
 		}
 		provisionVars["mysql_pressctlbot_password"] = mysqlPassword
 		provisionVars["php_version"] = phpVersion
+		provisionVars["stack"] = stack
 
 		// Create Ansible executor
 		executor := ansible.NewExecutor(cfg.Ansible.Path)
@@ -845,6 +873,7 @@ func init() {
 	serverAddCmd.Flags().String("ip", "", "Server IP address")
 	serverAddCmd.Flags().String("ssh-user", "root", "SSH user")
 	serverAddCmd.Flags().Int("ssh-port", 22, "SSH port")
+	serverAddCmd.Flags().String("stack", "traditional", "Server stack (traditional, frankenphp)")
 	serverAddCmd.Flags().Bool("json", false, "Output in JSON format")
 
 	// server list flags
@@ -864,6 +893,7 @@ func init() {
 	serverProvisionCmd.Flags().Bool("skip-port-check", false, "Skip port conflict check")
 	serverProvisionCmd.Flags().Bool("skip-check", false, "Skip already-provisioned check")
 	serverProvisionCmd.Flags().String("php-version", "", "PHP version to install (8.1, 8.2, 8.3, 8.4)")
+	serverProvisionCmd.Flags().String("stack", "", "Server stack (traditional, frankenphp)")
 	serverProvisionCmd.Flags().Bool("json", false, "Output in JSON format")
 
 	// server health-check flags

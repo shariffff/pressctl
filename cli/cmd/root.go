@@ -174,6 +174,7 @@ func (m menuModel) View() string {
 		type entry struct{ cmd, desc string }
 		commands := []entry{
 			{"press", "Launch interactive menu"},
+			{"press ui", "Open the web dashboard in your browser"},
 			{"press server add", "Add a new server without provisioning"},
 			{"press server list", "List all servers"},
 			{"press server remove <name>", "Remove a server from configuration"},
@@ -273,6 +274,7 @@ Examples:
 			{"Check server health", func() { serverHealthCheckCmd.Run(serverHealthCheckCmd, []string{}) }},
 			{"List servers", func() { serverListCmd.Run(serverListCmd, []string{}) }},
 			{"List sites", func() { siteListCmd.Run(siteListCmd, []string{}) }},
+			{"Open web dashboard", func() { uiCmd.Run(uiCmd, []string{}) }},
 		}
 
 		labels := make([]string, len(actions))

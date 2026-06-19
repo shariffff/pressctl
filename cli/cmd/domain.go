@@ -86,6 +86,13 @@ Examples:
 			"operation": "add_domain",
 			"domain":    input.Domain,
 			"site_id":   input.SiteID,
+			"stack":     targetServer.EffectiveStack(),
+		}
+
+		// The FrankenPHP stack roots the alias config at the site's primary
+		// domain directory, so pass it through when we can resolve it.
+		if primary := primaryDomainForSite(targetServer, input.SiteID); primary != "" {
+			extraVars["site_domain"] = primary
 		}
 
 		// Create Ansible executor
@@ -129,6 +136,7 @@ Examples:
 			sslVars := map[string]interface{}{
 				"operation": "issue_ssl",
 				"domain":    input.Domain,
+				"stack":     targetServer.EffectiveStack(),
 			}
 
 			sslResult, err := executor.ExecutePlaybookWithResult("playbooks/domain_management.yml", *targetServer, sslVars, cfg.GlobalVars)
@@ -263,6 +271,7 @@ Examples:
 		extraVars := map[string]interface{}{
 			"operation": "remove_domain",
 			"domain":    input.Domain,
+			"stack":     targetServer.EffectiveStack(),
 		}
 
 		// Create Ansible executor
@@ -348,10 +357,20 @@ Examples:
 			os.Exit(1)
 		}
 
+		// FrankenPHP serves TLS automatically via Caddy; there is no Certbot step.
+		if targetServer.EffectiveStack() == models.StackFrankenPHP {
+			color.Green("\n✓ This server uses the FrankenPHP stack — HTTPS is handled automatically by Caddy.")
+			fmt.Println()
+			fmt.Println("No manual SSL issuance is needed. Once DNS for the domain points at")
+			fmt.Printf("%s, Caddy obtains a Let's Encrypt certificate on first access.\n", targetServer.IP)
+			return
+		}
+
 		// Prepare extra vars for Ansible
 		extraVars := map[string]interface{}{
 			"operation": "issue_ssl",
 			"domain":    input.Domain,
+			"stack":     targetServer.EffectiveStack(),
 		}
 
 		// Create Ansible executor
@@ -409,6 +428,20 @@ Examples:
 		fmt.Printf("Expires:     %s\n", expiresAt.Format("2006-01-02"))
 		fmt.Printf("Auto-renew:  Certbot will auto-renew before expiration\n")
 	},
+}
+
+// primaryDomainForSite returns the primary domain of the site with the given
+// ID on the server, or "" if not found.
+func primaryDomainForSite(server *models.Server, siteID string) string {
+	if server == nil {
+		return ""
+	}
+	for i := range server.Sites {
+		if server.Sites[i].SiteID == siteID {
+			return server.Sites[i].PrimaryDomain
+		}
+	}
+	return ""
 }
 
 func init() {

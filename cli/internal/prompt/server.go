@@ -18,17 +18,23 @@ type ServerInput struct {
 	SSHUser    string
 	SSHPort    int
 	PHPVersion string
+	Stack      string
 }
 
 // PromptServerAdd prompts for server details
 func PromptServerAdd() (*ServerInput, error) {
 	input := &ServerInput{}
 
-	// Main form: name, IP, SSH user, SSH port, PHP version
+	// Main form: name, IP, SSH user, SSH port, stack, PHP version
 	var portStr string
 	phpVersions := make([]huh.Option[string], len(models.SupportedPHPVersions))
 	for i, v := range models.SupportedPHPVersions {
 		phpVersions[i] = huh.NewOption(v, v)
+	}
+
+	stacks := []huh.Option[string]{
+		huh.NewOption("Traditional (Nginx + PHP-FPM)", models.StackTraditional),
+		huh.NewOption("FrankenPHP (Docker + Caddy auto-HTTPS)", models.StackFrankenPHP),
 	}
 
 	if err := huh.NewForm(
@@ -64,6 +70,11 @@ func PromptServerAdd() (*ServerInput, error) {
 					return utils.ValidatePort(s)
 				}),
 			huh.NewSelect[string]().
+				Title("Server stack").
+				Description("Traditional installs Nginx + PHP-FPM on the host; FrankenPHP runs a Docker container with Caddy and automatic HTTPS").
+				Options(stacks...).
+				Value(&input.Stack),
+			huh.NewSelect[string]().
 				Title("PHP version").
 				Options(phpVersions...).
 				Value(&input.PHPVersion),
@@ -84,6 +95,9 @@ func PromptServerAdd() (*ServerInput, error) {
 	if input.PHPVersion == "" {
 		input.PHPVersion = models.DefaultPHPVersion
 	}
+	if input.Stack == "" {
+		input.Stack = models.DefaultStack
+	}
 	input.Hostname = input.IP
 
 	// Confirmation
@@ -100,6 +114,10 @@ func (si *ServerInput) ToServer() models.Server {
 	if phpVersion == "" {
 		phpVersion = models.DefaultPHPVersion
 	}
+	stack := si.Stack
+	if stack == "" {
+		stack = models.DefaultStack
+	}
 	return models.Server{
 		Name:     si.Name,
 		Hostname: si.Hostname,
@@ -109,6 +127,7 @@ func (si *ServerInput) ToServer() models.Server {
 			Port: si.SSHPort,
 		},
 		PHPVersion: phpVersion,
+		Stack:      stack,
 		Status:     "unprovisioned",
 		Sites:      []models.Site{},
 	}
@@ -120,6 +139,7 @@ func confirmServerAdd(input *ServerInput) error {
 	fmt.Printf("  IP:          %s\n", input.IP)
 	fmt.Printf("  SSH User:    %s\n", input.SSHUser)
 	fmt.Printf("  SSH Port:    %d\n", input.SSHPort)
+	fmt.Printf("  Stack:       %s\n", input.Stack)
 	fmt.Printf("  PHP Version: %s\n", input.PHPVersion)
 	fmt.Println()
 

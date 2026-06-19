@@ -29,6 +29,7 @@ type Site struct {
 	Domains       []Domain  `yaml:"domains"`
 	Database      Database  `yaml:"database"`
 	PHPVersion    string    `yaml:"php_version"`
+	Stack         string    `yaml:"stack,omitempty"`
 	Metadata      Metadata  `yaml:"metadata"`
 	Notes         string    `yaml:"notes,omitempty"`
 }
@@ -44,6 +45,7 @@ type rawSite struct {
 	Domains       []Domain  `yaml:"domains"`
 	Database      Database  `yaml:"database"`
 	PHPVersion    string    `yaml:"php_version"`
+	Stack         string    `yaml:"stack,omitempty"`
 	Metadata      Metadata  `yaml:"metadata"`
 	Notes         string    `yaml:"notes,omitempty"`
 }
@@ -70,6 +72,7 @@ func (s *Site) UnmarshalYAML(value *yaml.Node) error {
 	s.Domains = raw.Domains
 	s.Database = raw.Database
 	s.PHPVersion = raw.PHPVersion
+	s.Stack = raw.Stack
 	s.Metadata = raw.Metadata
 	s.Notes = raw.Notes
 

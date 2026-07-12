@@ -16,13 +16,18 @@
         else ('docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp')
       }}
 
-- name: Give the FrankenPHP user ownership of the site files (native runtime)
+# logs/ must be writable too: Caddy opens the per-site access log as this user.
+# (The docker runtime writes as container root, so no chown is needed there.)
+- name: Give the FrankenPHP user ownership of the site files and logs (native runtime)
   ansible.builtin.file:
-    path: "{{ site_home }}/files"
+    path: "{{ item }}"
     state: directory
     owner: "{{ frankenphp_user | default('frankenphp') }}"
     group: "{{ frankenphp_group | default('frankenphp') }}"
     mode: "0755"
+  loop:
+    - "{{ site_home }}/files"
+    - "{{ site_home }}/logs"
   when: fp_runtime == 'native'
 
 - name: Deploy Caddy site config for {{ domain }}

@@ -2,8 +2,10 @@
 ; pressctl PHP overrides for the FrankenPHP native runtime. Loaded after the
 ; packaged production php.ini. Note: {{ frankenphp_php_ini_dir }} is shared by
 ; the frankenphp server and the php-zts CLI (WP-CLI), so unlike the PHP-FPM
-; stack there is no per-SAPI split — php_disabled_functions is intentionally
-; not applied here because it would also break WP-CLI.
+; stack there is no per-SAPI split — php_disabled_functions must not go here
+; because it would also break WP-CLI. It is applied to the server process only,
+; via a PHP_INI_SCAN_DIR systemd drop-in pointing at
+; {{ frankenphp_server_ini_dir }}.
 memory_limit = {{ php_memory_limit }}
 upload_max_filesize = {{ php_upload_max_filesize }}
 post_max_size = {{ php_post_max_size }}

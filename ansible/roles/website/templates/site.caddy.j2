@@ -4,5 +4,14 @@
 {{ site_domains | default([domain]) | join(', ') }} {
 	root * /sites/{{ domain }}/files
 	encode zstd gzip
+	# Per-site access log (JSON lines: host, status, size, duration). Rolled and
+	# pruned by Caddy itself — no logrotate needed.
+	log {
+		output file /sites/{{ domain }}/logs/access.log {
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+	}
 	php_server
 }

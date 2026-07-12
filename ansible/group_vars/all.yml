@@ -168,6 +168,8 @@ php_extensions:
 # PHP disabled functions for security
 # These functions are commonly exploited in WordPress attacks
 # Remove functions from this list only if your application requires them
+# Applied to the PHP-FPM SAPI (traditional stack) and to the FrankenPHP server
+# process (via a server-only PHP_INI_SCAN_DIR) — never to CLI/WP-CLI.
 php_disabled_functions:
   - disk_free_space
   - disk_total_space

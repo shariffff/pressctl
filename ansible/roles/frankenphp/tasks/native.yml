@@ -105,6 +105,24 @@
     group: root
     mode: "0755"
 
+# ── Server-only PHP_INI_SCAN_DIR ──────────────────────────────────────────────
+- name: Create frankenphp systemd drop-in directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ frankenphp_systemd_unit }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Point the server at the server-only ini dir (PHP_INI_SCAN_DIR drop-in)
+  ansible.builtin.template:
+    src: systemd-override.conf.j2
+    dest: "/etc/systemd/system/{{ frankenphp_systemd_unit }}.service.d/pressctl.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart frankenphp
+
 - name: Enable and start FrankenPHP service
   ansible.builtin.systemd:
     name: "{{ frankenphp_systemd_unit }}"

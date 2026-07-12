@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+[Service]
+# The leading ':' appends to the compile-time scan dir
+# ({{ frankenphp_php_ini_dir }}/conf.d), so the server loads the shared conf.d
+# first and then the server-only hardening dir. The php-zts CLI (WP-CLI) never
+# sees this variable and keeps the unrestricted shared config.
+Environment=PHP_INI_SCAN_DIR=:{{ frankenphp_server_ini_dir }}

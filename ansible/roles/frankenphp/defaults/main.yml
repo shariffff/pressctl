@@ -55,6 +55,18 @@ frankenphp_wp_wrapper: /usr/local/bin/wp-franken
 # php-zts CLI (single shared php.ini — no per-SAPI split like PHP-FPM has).
 frankenphp_php_ini_dir: /etc/php-zts
 
+# Extra ini scan directory loaded ONLY by the frankenphp server process, via
+# PHP_INI_SCAN_DIR (systemd drop-in on native, container environment on docker).
+# Holds php_disabled_functions — hardening that can't go in the shared ini dir
+# because it would also apply to the php-zts CLI and break WP-CLI. Used by both
+# runtimes (bind-mounted into the container on docker).
+frankenphp_server_ini_dir: "{{ frankenphp_dir }}/php.d"
+
+# Compile-time ini scan dir of the upstream FrankenPHP Docker image (official
+# php image layout). WP-CLI execs inside the container reset PHP_INI_SCAN_DIR
+# to this value so they load the stock conf.d without the server-only dir above.
+frankenphp_docker_ini_scan_dir: /usr/local/etc/php/conf.d
+
 # systemd unit name (native runtime, shipped by the deb package)
 frankenphp_systemd_unit: frankenphp
 

@@ -1,0 +1,77 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Per-site resource summary from the Caddy access logs (/sites/<domain>/logs/).
+# On the shared FrankenPHP runtime there is no OS-level per-site CPU/memory
+# accounting, so total request-seconds (sum of request wall time) is the best
+# available proxy for which site is loading the server.
+#
+# Usage:
+#   press-sitestats            summary table, sorted by total request-seconds
+#   press-sitestats slow [S]   requests slower than S seconds (default 3)
+#
+# Only the current access.log of each site is read (Caddy rolls at 10MiB,
+# keeps 5 files for 30 days — point jq at logs/access-*.log for history).
+
+set -eu
+
+sites_root="${PRESS_SITES_ROOT:-/sites}"
+tab="$(printf '\t')"
+
+logs_exist() {
+    for log in "$sites_root"/*/logs/access.log; do
+        [ -e "$log" ] && return 0
+    done
+    return 1
+}
+
+if ! logs_exist; then
+    echo "No access logs found under $sites_root/*/logs/ — no FrankenPHP sites, or no traffic yet." >&2
+    exit 1
+fi
+
+site_of() {
+    site="${1#"$sites_root"/}"
+    site="${site%%/*}"
+}
+
+case "${1:-summary}" in
+summary)
+    {
+        printf 'SITE\tREQUESTS\tTOTAL(s)\tAVG(ms)\tMAX(s)\t5XX%%\n'
+        for log in "$sites_root"/*/logs/access.log; do
+            [ -s "$log" ] || continue
+            site_of "$log"
+            jq -rs --arg site "$site" '
+                length as $n
+                | if $n == 0 then empty else
+                    (map(.duration) | add) as $total
+                    | [ $site,
+                        $n,
+                        ($total * 100 | round / 100),
+                        ($total / $n * 100000 | round / 100),
+                        ((map(.duration) | max) * 100 | round / 100),
+                        ((map(select(.status >= 500)) | length) * 10000 / $n | round / 100) ]
+                    | @tsv
+                  end' "$log"
+        done | sort -t "$tab" -k3,3rn
+    } | column -t -s "$tab"
+    ;;
+slow)
+    threshold="${2:-3}"
+    {
+        printf 'DURATION(s)\tSITE\tSTATUS\tURI\n'
+        for log in "$sites_root"/*/logs/access.log; do
+            [ -s "$log" ] || continue
+            site_of "$log"
+            jq -r --arg site "$site" --argjson threshold "$threshold" '
+                select(.duration > $threshold)
+                | [ (.duration * 100 | round / 100), $site, .status, .request.uri ]
+                | @tsv' "$log"
+        done | sort -t "$tab" -k1,1rn | head -n 50
+    } | column -t -s "$tab"
+    ;;
+*)
+    echo "Usage: press-sitestats [summary | slow [SECONDS]]" >&2
+    exit 64
+    ;;
+esac

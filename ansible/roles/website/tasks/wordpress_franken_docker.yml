@@ -5,8 +5,14 @@
 
 - name: Set FrankenPHP WP-CLI exec prefix
   ansible.builtin.set_fact:
-    # -T disables pseudo-TTY allocation (required under Ansible/non-interactive)
-    fp_wp: "docker compose -f /etc/frankenphp/docker-compose.yml exec -T -w /sites/{{ domain }}/files frankenphp wp"
+    # -T disables pseudo-TTY allocation (required under Ansible/non-interactive).
+    # PHP_INI_SCAN_DIR is reset to the image's stock scan dir so WP-CLI skips
+    # the server-only hardening dir (disable_functions) set container-wide in
+    # docker-compose.yml.
+    fp_wp: >-
+      docker compose -f /etc/frankenphp/docker-compose.yml exec -T
+      -e PHP_INI_SCAN_DIR={{ frankenphp_docker_ini_scan_dir | default('/usr/local/etc/php/conf.d') }}
+      -w /sites/{{ domain }}/files frankenphp wp
     # Database host as seen from *inside* the container
     fp_db_host: host.docker.internal
 

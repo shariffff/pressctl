@@ -15,9 +15,16 @@ services:
     # Lets WordPress reach the host-installed MariaDB at host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    environment:
+      # Server-only hardening (disable_functions). The leading ':' appends to
+      # the image's compile-time scan dir ({{ frankenphp_docker_ini_scan_dir }}).
+      # WP-CLI execs reset this variable to the stock scan dir — see
+      # wordpress_franken_docker.yml / cron_franken.yml.
+      PHP_INI_SCAN_DIR: ":{{ frankenphp_server_ini_dir }}"
     volumes:
       - /sites:/sites
       - {{ frankenphp_dir }}/Caddyfile:/etc/caddy/Caddyfile:ro
       - {{ frankenphp_sites_dir }}:{{ frankenphp_sites_dir }}:ro
+      - {{ frankenphp_server_ini_dir }}:{{ frankenphp_server_ini_dir }}:ro
       - {{ frankenphp_dir }}/data:/data
       - {{ frankenphp_dir }}/config:/config

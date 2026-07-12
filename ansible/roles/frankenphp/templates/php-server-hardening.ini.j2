@@ -1,0 +1,5 @@
+; {{ ansible_managed }}
+; Loaded ONLY by the frankenphp server process via PHP_INI_SCAN_DIR (systemd
+; drop-in on the native runtime, container environment on docker). WP-CLI does
+; not scan this directory, so it keeps exec/proc_* for shelling out.
+disable_functions = {{ php_disabled_functions | join(',') }}

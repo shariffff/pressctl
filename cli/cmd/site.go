@@ -132,6 +132,9 @@ var siteCreateCmd = &cobra.Command{
 			"php_version":       sitePHPVersion,
 			"stack":             stack,
 		}
+		if isFrankenPHP {
+			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
+		}
 
 		// Add skip_ssl if --no-ssl flag is set
 		if skipSSL {
@@ -508,6 +511,9 @@ var siteDeleteCmd = &cobra.Command{
 			"site_domain": targetSite.PrimaryDomain,
 			"db_host":     targetSite.Database.Host,
 			"stack":       stack,
+		}
+		if stack == models.StackFrankenPHP {
+			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
 		}
 
 		// Create Ansible executor

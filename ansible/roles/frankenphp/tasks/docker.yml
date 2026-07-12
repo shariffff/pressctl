@@ -1,0 +1,43 @@
+---
+# Docker runtime: build the FrankenPHP image and start the single container that
+# serves all sites. Site files are bind-mounted from /sites; the container reaches
+# the host MariaDB over the Docker host gateway.
+
+- name: Create Caddy data/config directories (mounted into the container)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ frankenphp_dir }}/data"
+    - "{{ frankenphp_dir }}/config"
+
+- name: Deploy FrankenPHP Dockerfile
+  ansible.builtin.template:
+    src: Dockerfile.j2
+    dest: "{{ frankenphp_dir }}/Dockerfile"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy docker-compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ frankenphp_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Build FrankenPHP image
+  ansible.builtin.command:
+    cmd: docker compose -f {{ frankenphp_compose_file }} build
+  register: frankenphp_build
+  changed_when: "'Building' in frankenphp_build.stderr or 'naming to' in frankenphp_build.stderr or 'writing image' in frankenphp_build.stderr"
+
+- name: Start FrankenPHP container
+  ansible.builtin.command:
+    cmd: docker compose -f {{ frankenphp_compose_file }} up -d
+  register: frankenphp_up
+  changed_when: "'Started' in frankenphp_up.stderr or 'Created' in frankenphp_up.stderr or 'Recreated' in frankenphp_up.stderr"

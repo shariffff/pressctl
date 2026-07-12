@@ -22,6 +22,15 @@
     proto: tcp
   with_items: '{{ ufw_allowed_ports }}'
 
+# Caddy (FrankenPHP) serves HTTP/3 over QUIC; without this rule browsers
+# silently fall back to HTTP/2 over TCP.
+- name: Allow HTTP/3 (UDP 443) for the FrankenPHP stack
+  community.general.ufw:
+    rule: allow
+    port: '443'
+    proto: udp
+  when: stack | default('traditional') == 'frankenphp'
+
 - name: Enable UFW with default {{ ufw_default_policy }} policy
   community.general.ufw:
     state: enabled

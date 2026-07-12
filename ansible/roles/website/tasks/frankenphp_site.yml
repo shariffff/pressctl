@@ -1,12 +1,29 @@
 ---
 # FrankenPHP site config: drop a per-domain Caddy snippet and reload the shared
-# FrankenPHP container so it picks up the new site. TLS is automatic via Caddy.
+# FrankenPHP runtime so it picks up the new site. TLS is automatic via Caddy.
+# Works for both runtimes (native systemd binary / docker container).
 
-- name: Set FrankenPHP paths
+- name: Set FrankenPHP runtime facts
   ansible.builtin.set_fact:
-    fp_compose: /etc/frankenphp/docker-compose.yml
-    fp_service: frankenphp
+    fp_runtime: "{{ frankenphp_runtime | default('native') }}"
     fp_sites_dir: /etc/frankenphp/sites
+    # Command used to reload the runtime after a config change. The native deb
+    # unit supports a graceful (zero-downtime) reload; docker needs a restart.
+    fp_reload_cmd: >-
+      {{
+        'systemctl reload ' ~ (frankenphp_systemd_unit | default('frankenphp'))
+        if (frankenphp_runtime | default('native') == 'native')
+        else ('docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp')
+      }}
+
+- name: Give the FrankenPHP user ownership of the site files (native runtime)
+  ansible.builtin.file:
+    path: "{{ site_home }}/files"
+    state: directory
+    owner: "{{ frankenphp_user | default('frankenphp') }}"
+    group: "{{ frankenphp_group | default('frankenphp') }}"
+    mode: "0755"
+  when: fp_runtime == 'native'
 
 - name: Deploy Caddy site config for {{ domain }}
   ansible.builtin.template:
@@ -17,8 +34,8 @@
     mode: "0644"
   register: fp_site_config
 
-- name: Reload FrankenPHP container to apply site config
+- name: Reload FrankenPHP to apply site config
   ansible.builtin.command:
-    cmd: docker compose -f {{ fp_compose }} restart {{ fp_service }}
+    cmd: "{{ fp_reload_cmd }}"
   changed_when: true
   when: fp_site_config is changed

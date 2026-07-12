@@ -1,8 +1,21 @@
 ---
-# wp-cron for the FrankenPHP stack. Runs as root on the host and invokes WP-CLI
-# inside the container (where PHP + wp live). The host crontab has no PHP.
+# wp-cron for the FrankenPHP stack.
+#   native : runs as the frankenphp user via the wp-franken wrapper.
+#   docker : runs as root and invokes WP-CLI inside the container.
 
-- name: Ensure wp-cron job for {{ domain }} (frankenphp)
+- name: Ensure wp-cron job for {{ domain }} (frankenphp native)
+  ansible.builtin.cron:
+    name: "wp-cron-{{ domain }}"
+    minute: "2,7,12,17,22,27,32,37,42,47,52,57"
+    job: >-
+      cd {{ site_home }}/files &&
+      {{ frankenphp_wp_wrapper | default('/usr/local/bin/wp-franken') }}
+      cron event run --due-now --quiet
+    user: "{{ frankenphp_user | default('frankenphp') }}"
+    state: present
+  when: frankenphp_runtime | default('native') == 'native'
+
+- name: Ensure wp-cron job for {{ domain }} (frankenphp docker)
   ansible.builtin.cron:
     name: "wp-cron-{{ domain }}"
     minute: "2,7,12,17,22,27,32,37,42,47,52,57"
@@ -12,3 +25,4 @@
       wp cron event run --due-now --quiet --allow-root
     user: root
     state: present
+  when: frankenphp_runtime | default('native') == 'docker'

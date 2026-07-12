@@ -1,0 +1,113 @@
+---
+# Native runtime: install FrankenPHP from the static-php Debian repository
+# (pkg.henderkes.com). The deb package ships /usr/bin/frankenphp, a systemd unit
+# (with graceful ExecReload), creates the frankenphp user/group (home:
+# /var/lib/frankenphp, where Caddy stores its TLS certificates) and setcaps the
+# binary so it can bind 80/443. PHP extensions install as php-zts-<name>
+# packages; PHP config lives in {{ frankenphp_php_ini_dir }} (shared by the
+# server and the php-zts CLI). The repository is per-PHP-version (8.3 → "83"),
+# selected via php_version.
+
+- name: Ensure APT keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Add static-php repository signing key
+  ansible.builtin.get_url:
+    url: "{{ frankenphp_repo_url }}/repository.key"
+    dest: "{{ frankenphp_repo_key_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: fp_repo_key
+  until: fp_repo_key is success
+  retries: 3
+  delay: 5
+
+- name: Add static-php APT repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ frankenphp_repo_key_path }}] {{ frankenphp_repo_url }} php-zts main"
+    filename: "static-php{{ frankenphp_repo_version }}"
+    state: present
+    update_cache: true
+
+# The base Caddyfile deployed earlier in this role survives the package install:
+# /etc/frankenphp/Caddyfile is a dpkg conffile and the apt module runs with
+# --force-confold, so an existing file is kept. php-zts-cli provides the
+# php-zts CLI binary (used by the wp-franken wrapper) and the production
+# php.ini in {{ frankenphp_php_ini_dir }}.
+- name: Install FrankenPHP, PHP CLI and extensions
+  ansible.builtin.apt:
+    name: "{{ ['frankenphp', 'php-zts-cli'] + (frankenphp_zts_extensions | map('regex_replace', '^', 'php-zts-') | list) }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  notify: restart frankenphp
+
+- name: Create Caddyfile.d directory (deb package config convention)
+  ansible.builtin.file:
+    path: "{{ frankenphp_dir }}/Caddyfile.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure PHP overrides
+  ansible.builtin.template:
+    src: php-pressctl.ini.j2
+    dest: "{{ frankenphp_php_ini_dir }}/conf.d/99-pressctl.ini"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart frankenphp
+
+# ── Optional PIE extensions ───────────────────────────────────────────────────
+- name: Install PIE (PHP extension installer)
+  ansible.builtin.apt:
+    name: pie-zts
+    state: present
+  when: frankenphp_pie_extensions | length > 0
+
+- name: List PIE-installed extensions
+  ansible.builtin.command: pie-zts show
+  register: fp_pie_installed
+  changed_when: false
+  when: frankenphp_pie_extensions | length > 0
+
+- name: Install PIE extensions
+  ansible.builtin.command: "pie-zts install {{ item }}"
+  loop: "{{ frankenphp_pie_extensions }}"
+  when: item not in fp_pie_installed.stdout | default('')
+  notify: restart frankenphp
+
+# ── WP-CLI ────────────────────────────────────────────────────────────────────
+- name: Download WP-CLI phar
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    dest: "{{ frankenphp_wp_phar }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: fp_wpcli
+  until: fp_wpcli is success
+  retries: 3
+  delay: 5
+
+- name: Deploy WP-CLI wrapper (runs wp.phar with the php-zts CLI)
+  ansible.builtin.template:
+    src: wp-franken.j2
+    dest: "{{ frankenphp_wp_wrapper }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Enable and start FrankenPHP service
+  ansible.builtin.systemd:
+    name: "{{ frankenphp_systemd_unit }}"
+    enabled: true
+    state: started
+    daemon_reload: true

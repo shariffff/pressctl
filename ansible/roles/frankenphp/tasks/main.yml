@@ -1,8 +1,12 @@
 ---
 # FrankenPHP Role Tasks
-# Builds and starts the single FrankenPHP container that serves all sites on
-# this server. Site files are mounted from /sites; TLS is handled by Caddy.
+# Sets up the FrankenPHP runtime that serves all sites on this server. TLS is
+# handled automatically by Caddy. Two runtimes are supported (frankenphp_runtime):
+#   native : the FrankenPHP deb package (static-php repo) under systemd
+#   docker : a container built from the upstream FrankenPHP image
+# The Caddyfile and per-site config layout are identical for both.
 
+# ── Shared layout (both runtimes) ────────────────────────────────────────────
 - name: Create FrankenPHP directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -13,21 +17,11 @@
   loop:
     - "{{ frankenphp_dir }}"
     - "{{ frankenphp_sites_dir }}"
-    - "{{ frankenphp_dir }}/data"
-    - "{{ frankenphp_dir }}/config"
 
 - name: Deploy placeholder site config (keeps Caddyfile import glob non-empty)
   ansible.builtin.copy:
     dest: "{{ frankenphp_sites_dir }}/.keep.caddy"
     content: "# Placeholder so 'import {{ frankenphp_sites_dir }}/*.caddy' always matches.\n"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Deploy FrankenPHP Dockerfile
-  ansible.builtin.template:
-    src: Dockerfile.j2
-    dest: "{{ frankenphp_dir }}/Dockerfile"
     owner: root
     group: root
     mode: "0644"
@@ -41,22 +35,12 @@
     mode: "0644"
   notify: reload frankenphp
 
-- name: Deploy docker-compose file
-  ansible.builtin.template:
-    src: docker-compose.yml.j2
-    dest: "{{ frankenphp_compose_file }}"
-    owner: root
-    group: root
-    mode: "0644"
+# ── Native runtime: deb package (static-php repo) + systemd ──────────────────
+- name: Set up native FrankenPHP runtime
+  ansible.builtin.include_tasks: native.yml
+  when: frankenphp_runtime | default('native') == 'native'
 
-- name: Build FrankenPHP image
-  ansible.builtin.command:
-    cmd: docker compose -f {{ frankenphp_compose_file }} build
-  register: frankenphp_build
-  changed_when: "'Building' in frankenphp_build.stderr or 'naming to' in frankenphp_build.stderr or 'writing image' in frankenphp_build.stderr"
-
-- name: Start FrankenPHP container
-  ansible.builtin.command:
-    cmd: docker compose -f {{ frankenphp_compose_file }} up -d
-  register: frankenphp_up
-  changed_when: "'Started' in frankenphp_up.stderr or 'Created' in frankenphp_up.stderr or 'Recreated' in frankenphp_up.stderr"
+# ── Docker runtime: image build + compose ────────────────────────────────────
+- name: Set up Docker FrankenPHP runtime
+  ansible.builtin.include_tasks: docker.yml
+  when: frankenphp_runtime | default('native') == 'docker'

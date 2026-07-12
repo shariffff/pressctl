@@ -52,6 +52,7 @@ Examples:
 			sshUser, _ := cmd.Flags().GetString("ssh-user")
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
 			stack, _ := cmd.Flags().GetString("stack")
+			runtime, _ := cmd.Flags().GetString("frankenphp-runtime")
 
 			if stack == "" {
 				stack = models.DefaultStack
@@ -60,14 +61,26 @@ Examples:
 				outputError(cmd, "Invalid stack", fmt.Errorf("unknown stack '%s'; supported: %v", stack, models.SupportedStacks))
 				os.Exit(1)
 			}
+			if stack == models.StackFrankenPHP {
+				if runtime == "" {
+					runtime = models.DefaultFrankenPHPRuntime
+				}
+				if !models.IsValidFrankenPHPRuntime(runtime) {
+					outputError(cmd, "Invalid FrankenPHP runtime", fmt.Errorf("unknown runtime '%s'; supported: %v", runtime, models.SupportedFrankenPHPRuntimes))
+					os.Exit(1)
+				}
+			} else {
+				runtime = "" // runtime only applies to the frankenphp stack
+			}
 
 			input = &prompt.ServerInput{
-				Name:     name,
-				Hostname: ip,
-				IP:       ip,
-				SSHUser:  sshUser,
-				SSHPort:  sshPort,
-				Stack:    stack,
+				Name:              name,
+				Hostname:          ip,
+				IP:                ip,
+				SSHUser:           sshUser,
+				SSHPort:           sshPort,
+				Stack:             stack,
+				FrankenPHPRuntime: runtime,
 			}
 
 			if input.SSHUser == "" {
@@ -347,6 +360,7 @@ Examples:
 			sshPort, _ := cmd.Flags().GetInt("ssh-port")
 			flagPHP, _ := cmd.Flags().GetString("php-version")
 			flagStack, _ := cmd.Flags().GetString("stack")
+			flagRuntime, _ := cmd.Flags().GetString("frankenphp-runtime")
 
 			if flagPHP == "" {
 				flagPHP = models.DefaultPHPVersion
@@ -357,6 +371,17 @@ Examples:
 			if !models.IsValidStack(flagStack) {
 				outputError(cmd, "Invalid stack", fmt.Errorf("unknown stack '%s'; supported: %v", flagStack, models.SupportedStacks))
 				os.Exit(1)
+			}
+			if flagStack == models.StackFrankenPHP {
+				if flagRuntime == "" {
+					flagRuntime = models.DefaultFrankenPHPRuntime
+				}
+				if !models.IsValidFrankenPHPRuntime(flagRuntime) {
+					outputError(cmd, "Invalid FrankenPHP runtime", fmt.Errorf("unknown runtime '%s'; supported: %v", flagRuntime, models.SupportedFrankenPHPRuntimes))
+					os.Exit(1)
+				}
+			} else {
+				flagRuntime = ""
 			}
 
 			// Check for duplicate server name
@@ -376,10 +401,11 @@ Examples:
 					User: sshUser,
 					Port: sshPort,
 				},
-				PHPVersion: flagPHP,
-				Stack:      flagStack,
-				Status:     "unprovisioned",
-				Sites:      []models.Site{},
+				PHPVersion:        flagPHP,
+				Stack:             flagStack,
+				FrankenPHPRuntime: flagRuntime,
+				Status:            "unprovisioned",
+				Sites:             []models.Site{},
 			}
 
 			cfg.Servers = append(cfg.Servers, newServer)
@@ -528,10 +554,15 @@ Examples:
 			phpVersion = models.DefaultPHPVersion
 		}
 		stack := targetServer.EffectiveStack()
+		runtime := targetServer.EffectiveFrankenPHPRuntime()
 		color.Cyan("About to provision server: %s (%s)", targetServer.Name, targetServer.IP)
 		fmt.Println("This will:")
 		if stack == models.StackFrankenPHP {
-			fmt.Printf("  - Install Docker and run FrankenPHP %s (Caddy, automatic HTTPS)\n", phpVersion)
+			if runtime == models.RuntimeDocker {
+				fmt.Printf("  - Install Docker and run FrankenPHP %s in a container (Caddy, automatic HTTPS)\n", phpVersion)
+			} else {
+				fmt.Println("  - Install the FrankenPHP binary under systemd (Caddy, automatic HTTPS)")
+			}
 			fmt.Println("  - Install MariaDB and Redis on the host")
 			fmt.Println("  - Configure security (UFW, Fail2ban, SSH hardening)")
 			fmt.Println("  - Create pressctl user and environment")
@@ -587,6 +618,9 @@ Examples:
 		provisionVars["mysql_pressctlbot_password"] = mysqlPassword
 		provisionVars["php_version"] = phpVersion
 		provisionVars["stack"] = stack
+		if stack == models.StackFrankenPHP {
+			provisionVars["frankenphp_runtime"] = runtime
+		}
 
 		// Create Ansible executor
 		executor := ansible.NewExecutor(cfg.Ansible.Path)
@@ -874,6 +908,7 @@ func init() {
 	serverAddCmd.Flags().String("ssh-user", "root", "SSH user")
 	serverAddCmd.Flags().Int("ssh-port", 22, "SSH port")
 	serverAddCmd.Flags().String("stack", "traditional", "Server stack (traditional, frankenphp)")
+	serverAddCmd.Flags().String("frankenphp-runtime", "native", "FrankenPHP runtime when stack=frankenphp (native, docker)")
 	serverAddCmd.Flags().Bool("json", false, "Output in JSON format")
 
 	// server list flags
@@ -894,6 +929,7 @@ func init() {
 	serverProvisionCmd.Flags().Bool("skip-check", false, "Skip already-provisioned check")
 	serverProvisionCmd.Flags().String("php-version", "", "PHP version to install (8.1, 8.2, 8.3, 8.4)")
 	serverProvisionCmd.Flags().String("stack", "", "Server stack (traditional, frankenphp)")
+	serverProvisionCmd.Flags().String("frankenphp-runtime", "", "FrankenPHP runtime when stack=frankenphp (native, docker)")
 	serverProvisionCmd.Flags().Bool("json", false, "Output in JSON format")
 
 	// server health-check flags

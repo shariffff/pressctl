@@ -88,6 +88,9 @@ Examples:
 			"site_id":   input.SiteID,
 			"stack":     targetServer.EffectiveStack(),
 		}
+		if targetServer.EffectiveStack() == models.StackFrankenPHP {
+			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
+		}
 
 		// The FrankenPHP stack roots the alias config at the site's primary
 		// domain directory, so pass it through when we can resolve it.
@@ -273,6 +276,9 @@ Examples:
 			"domain":    input.Domain,
 			"stack":     targetServer.EffectiveStack(),
 		}
+		if targetServer.EffectiveStack() == models.StackFrankenPHP {
+			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
+		}
 
 		// Create Ansible executor
 		executor := ansible.NewExecutor(cfg.Ansible.Path)
@@ -371,6 +377,9 @@ Examples:
 			"operation": "issue_ssl",
 			"domain":    input.Domain,
 			"stack":     targetServer.EffectiveStack(),
+		}
+		if targetServer.EffectiveStack() == models.StackFrankenPHP {
+			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
 		}
 
 		// Create Ansible executor

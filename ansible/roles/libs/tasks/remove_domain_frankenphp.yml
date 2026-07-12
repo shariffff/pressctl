@@ -10,6 +10,16 @@
     success_msg: "All required variables are properly defined"
   tags: remove_domain
 
+- name: Compute FrankenPHP reload command
+  ansible.builtin.set_fact:
+    fp_reload_cmd: >-
+      {{
+        'systemctl reload ' ~ (frankenphp_systemd_unit | default('frankenphp'))
+        if (frankenphp_runtime | default('native') == 'native')
+        else ('docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp')
+      }}
+  tags: remove_domain
+
 - name: Remove Caddy config for domain {{ domain }}
   ansible.builtin.file:
     path: "/etc/frankenphp/sites/{{ domain }}.caddy"
@@ -17,9 +27,9 @@
   register: fp_alias_removed
   tags: remove_domain
 
-- name: Reload FrankenPHP container
+- name: Reload FrankenPHP
   ansible.builtin.command:
-    cmd: docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp
+    cmd: "{{ fp_reload_cmd }}"
   changed_when: true
   when: fp_alias_removed is changed
   tags: remove_domain

@@ -12,13 +12,14 @@ import (
 
 // ServerInput holds the input for server creation
 type ServerInput struct {
-	Name       string
-	Hostname   string
-	IP         string
-	SSHUser    string
-	SSHPort    int
-	PHPVersion string
-	Stack      string
+	Name              string
+	Hostname          string
+	IP                string
+	SSHUser           string
+	SSHPort           int
+	PHPVersion        string
+	Stack             string
+	FrankenPHPRuntime string
 }
 
 // PromptServerAdd prompts for server details
@@ -32,9 +33,18 @@ func PromptServerAdd() (*ServerInput, error) {
 		phpVersions[i] = huh.NewOption(v, v)
 	}
 
+	// The stack select offers three choices. FrankenPHP has two runtimes, so we
+	// encode the choice as "stack" or "stack:runtime" and split it afterwards.
+	const (
+		choiceTraditional   = models.StackTraditional
+		choiceFrankenNative = models.StackFrankenPHP + ":" + models.RuntimeNative
+		choiceFrankenDocker = models.StackFrankenPHP + ":" + models.RuntimeDocker
+	)
+	var stackChoice string
 	stacks := []huh.Option[string]{
-		huh.NewOption("Traditional (Nginx + PHP-FPM)", models.StackTraditional),
-		huh.NewOption("FrankenPHP (Docker + Caddy auto-HTTPS)", models.StackFrankenPHP),
+		huh.NewOption("Traditional (Nginx + PHP-FPM)", choiceTraditional),
+		huh.NewOption("FrankenPHP — native binary (Caddy auto-HTTPS, no Docker)", choiceFrankenNative),
+		huh.NewOption("FrankenPHP — Docker container (Caddy auto-HTTPS)", choiceFrankenDocker),
 	}
 
 	if err := huh.NewForm(
@@ -71,9 +81,9 @@ func PromptServerAdd() (*ServerInput, error) {
 				}),
 			huh.NewSelect[string]().
 				Title("Server stack").
-				Description("Traditional installs Nginx + PHP-FPM on the host; FrankenPHP runs a Docker container with Caddy and automatic HTTPS").
+				Description("Traditional installs Nginx + PHP-FPM on the host. FrankenPHP (Caddy + PHP, automatic HTTPS) runs either as a native systemd binary or in Docker").
 				Options(stacks...).
-				Value(&input.Stack),
+				Value(&stackChoice),
 			huh.NewSelect[string]().
 				Title("PHP version").
 				Options(phpVersions...).
@@ -95,8 +105,19 @@ func PromptServerAdd() (*ServerInput, error) {
 	if input.PHPVersion == "" {
 		input.PHPVersion = models.DefaultPHPVersion
 	}
+
+	// Split the composite stack choice into stack + FrankenPHP runtime.
+	if before, after, found := strings.Cut(stackChoice, ":"); found {
+		input.Stack = before
+		input.FrankenPHPRuntime = after
+	} else {
+		input.Stack = stackChoice
+	}
 	if input.Stack == "" {
 		input.Stack = models.DefaultStack
+	}
+	if input.Stack == models.StackFrankenPHP && input.FrankenPHPRuntime == "" {
+		input.FrankenPHPRuntime = models.DefaultFrankenPHPRuntime
 	}
 	input.Hostname = input.IP
 
@@ -118,6 +139,13 @@ func (si *ServerInput) ToServer() models.Server {
 	if stack == "" {
 		stack = models.DefaultStack
 	}
+	runtime := si.FrankenPHPRuntime
+	if stack == models.StackFrankenPHP && runtime == "" {
+		runtime = models.DefaultFrankenPHPRuntime
+	}
+	if stack != models.StackFrankenPHP {
+		runtime = "" // runtime only applies to the frankenphp stack
+	}
 	return models.Server{
 		Name:     si.Name,
 		Hostname: si.Hostname,
@@ -126,10 +154,11 @@ func (si *ServerInput) ToServer() models.Server {
 			User: si.SSHUser,
 			Port: si.SSHPort,
 		},
-		PHPVersion: phpVersion,
-		Stack:      stack,
-		Status:     "unprovisioned",
-		Sites:      []models.Site{},
+		PHPVersion:        phpVersion,
+		Stack:             stack,
+		FrankenPHPRuntime: runtime,
+		Status:            "unprovisioned",
+		Sites:             []models.Site{},
 	}
 }
 
@@ -139,7 +168,11 @@ func confirmServerAdd(input *ServerInput) error {
 	fmt.Printf("  IP:          %s\n", input.IP)
 	fmt.Printf("  SSH User:    %s\n", input.SSHUser)
 	fmt.Printf("  SSH Port:    %d\n", input.SSHPort)
-	fmt.Printf("  Stack:       %s\n", input.Stack)
+	if input.Stack == models.StackFrankenPHP {
+		fmt.Printf("  Stack:       %s (%s runtime)\n", input.Stack, input.FrankenPHPRuntime)
+	} else {
+		fmt.Printf("  Stack:       %s\n", input.Stack)
+	}
 	fmt.Printf("  PHP Version: %s\n", input.PHPVersion)
 	fmt.Println()
 

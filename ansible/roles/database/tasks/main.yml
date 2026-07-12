@@ -31,11 +31,12 @@
     mode: '0644'
   notify: restart mariadb
 
-# FrankenPHP stack: the site container reaches MariaDB over the Docker bridge via
-# host.docker.internal, so MariaDB must listen beyond loopback. This file is
-# numbered 99 so it loads after the distro default 50-server.cnf and wins.
+# FrankenPHP docker runtime: the site container reaches MariaDB over the Docker
+# bridge via host.docker.internal, so MariaDB must listen beyond loopback. This
+# file is numbered 99 so it loads after the distro default 50-server.cnf and wins.
 # UFW still blocks 3306 from the public internet (only 22/80/443 are open).
-- name: Allow MariaDB connections from Docker (FrankenPHP stack)
+# The native FrankenPHP runtime connects over loopback, so this is not applied.
+- name: Allow MariaDB connections from Docker (FrankenPHP docker runtime)
   ansible.builtin.copy:
     dest: /etc/mysql/mariadb.conf.d/99-pressctl-bind.cnf
     content: |
@@ -45,7 +46,9 @@
     owner: root
     group: root
     mode: '0644'
-  when: stack | default('traditional') == 'frankenphp'
+  when:
+    - stack | default('traditional') == 'frankenphp'
+    - frankenphp_runtime | default('native') == 'docker'
   notify: restart mariadb
 
 - name: Create MariaDB systemd override directory

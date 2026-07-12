@@ -12,3 +12,7 @@
 # Site configs (one file per domain). The placeholder .keep.caddy keeps this
 # glob non-empty on a freshly provisioned server with no sites yet.
 import {{ frankenphp_sites_dir }}/*.caddy
+
+# Extra config following the static-php deb package convention (native runtime).
+# Drop ad-hoc *.caddyfile snippets here; pressctl does not manage this directory.
+import Caddyfile.d/*.caddyfile

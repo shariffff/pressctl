@@ -18,14 +18,26 @@ mysql_pressctlbot_password: ''
 # Web/runtime stack for the server. Chosen per-server (the CLI passes this via
 # --extra-vars based on the server's configured stack).
 #   traditional : host-installed Nginx + PHP-FPM, Certbot for TLS (default)
-#   frankenphp  : a Docker container running FrankenPHP (Caddy + PHP) that serves
-#                 all sites and obtains TLS automatically; MariaDB/Redis stay on
-#                 the host. PHP runs inside the container, not on the host.
+#   frankenphp  : FrankenPHP (Caddy + PHP) serves all sites and obtains TLS
+#                 automatically; MariaDB/Redis stay on the host. See
+#                 frankenphp_runtime below for how FrankenPHP itself is deployed.
 stack: "traditional"
+
+# How the FrankenPHP runtime is deployed (only used when stack == frankenphp):
+#   native : FrankenPHP installed from the static-php deb repository
+#            (pkg.henderkes.com) and run under systemd (no Docker). PHP
+#            extensions install as php-zts-<name> packages, PHP config lives in
+#            /etc/php-zts. It connects to MariaDB over loopback. Recommended for
+#            the single-VPS model — consistent with the rest of the stack.
+#   docker : a Docker container built from the upstream FrankenPHP image. It
+#            reaches the host MariaDB over the Docker host gateway, which also
+#            requires MariaDB to listen beyond loopback.
+frankenphp_runtime: "native"
 
 # Default PHP version installed on the server and used by all sites
 # Changing this after provisioning requires re-running the php role
-# For the frankenphp stack this selects the FrankenPHP image's PHP version.
+# For the frankenphp stack this selects the FrankenPHP image's PHP version
+# (docker) or the static-php deb repository version (native, 8.2–8.5).
 php_version: "8.3"
 
 # Server timezone — must be a valid tz database name (e.g. "America/New_York", "Europe/London")
@@ -36,6 +48,8 @@ server_timezone: "UTC"
 # ─────────────────────────────────────────────────────────────────────────────
 # PHP
 # ─────────────────────────────────────────────────────────────────────────────
+# These limits apply to the traditional stack (PHP-FPM pools) and to the
+# frankenphp native runtime (/etc/php-zts/conf.d/99-pressctl.ini).
 
 php_memory_limit: "256M"
 php_upload_max_filesize: "64M"

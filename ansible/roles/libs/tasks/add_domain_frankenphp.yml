@@ -11,6 +11,16 @@
     success_msg: "All required variables are properly defined"
   tags: add_domain
 
+- name: Compute FrankenPHP reload command
+  ansible.builtin.set_fact:
+    fp_reload_cmd: >-
+      {{
+        'systemctl reload ' ~ (frankenphp_systemd_unit | default('frankenphp'))
+        if (frankenphp_runtime | default('native') == 'native')
+        else ('docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp')
+      }}
+  tags: add_domain
+
 - name: Deploy Caddy config for additional domain {{ domain }}
   ansible.builtin.template:
     src: site-alias.caddy.j2
@@ -21,9 +31,9 @@
   register: fp_alias_config
   tags: add_domain
 
-- name: Reload FrankenPHP container
+- name: Reload FrankenPHP
   ansible.builtin.command:
-    cmd: docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp
+    cmd: "{{ fp_reload_cmd }}"
   changed_when: true
   when: fp_alias_config is changed
   tags: add_domain

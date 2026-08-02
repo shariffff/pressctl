@@ -51,6 +51,7 @@ press server list         # List servers
 press site create         # Create WordPress site
 press site list           # List sites
 press site delete         # Delete site
+press site php-version    # Change site's PHP version
 
 press domain add          # Add domain to site
 press domain ssl          # Issue SSL certificate

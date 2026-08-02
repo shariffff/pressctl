@@ -201,6 +201,12 @@ press site delete --server production-1 --site mysiteid
 
 # Force delete without confirmation
 press site delete --server production-1 --site mysiteid --force
+
+# Change a site's PHP version (interactive selection)
+press site php-version
+
+# Change a specific site's PHP version (8.1–8.5)
+press site php-version --server production-1 --site mysiteid --version 8.4
 ```
 
 ### Domain Management

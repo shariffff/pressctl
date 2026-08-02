@@ -10,6 +10,13 @@
     site_home: '/sites/{{ site_domain }}'
 
   pre_tasks:
+    # Accept the same "domain" variable used by website.yml so the cron entry
+    # (named wp-cron-{{ domain }} at creation) is removed consistently.
+    - name: Resolve site_domain from domain
+      ansible.builtin.set_fact:
+        site_domain: '{{ domain }}'
+      when: domain is defined and domain | length > 0
+
     - name: Validate required variables
       ansible.builtin.assert:
         that:
@@ -19,7 +26,7 @@
         fail_msg: |
           Required variables are missing or empty. Please provide:
             - site_id: Site identifier
-            - site_domain: Domain name of the site to delete
+            - site_domain: Domain name of the site to delete (or pass domain)
             - db_host: Database host (e.g., localhost or localhost:3306)
           Pass these via --extra-vars
 

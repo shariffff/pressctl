@@ -48,6 +48,7 @@ test-ansible:
 	@cd ansible && ansible-playbook --syntax-check website.yml
 	@cd ansible && ansible-playbook --syntax-check playbooks/domain_management.yml
 	@cd ansible && ansible-playbook --syntax-check playbooks/delete_site.yml
+	@cd ansible && ansible-playbook --syntax-check playbooks/php_version_change.yml
 	@echo "✓ Ansible syntax validation passed"
 
 # Format Go code

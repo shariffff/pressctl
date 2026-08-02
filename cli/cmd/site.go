@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -20,7 +21,7 @@ import (
 var siteCmd = &cobra.Command{
 	Use:   "site",
 	Short: "Manage WordPress sites",
-	Long:  `Create, list, and delete WordPress sites on provisioned servers.`,
+	Long:  `Create, list, delete, and manage WordPress sites on provisioned servers.`,
 }
 
 // siteCreateCmd represents the site create command
@@ -237,11 +238,6 @@ var siteCreateCmd = &cobra.Command{
 			fmt.Printf("   1. Update your DNS A record to point to %s\n", result.DNSStatus.ServerIP)
 			fmt.Printf("   2. Run: press domain ssl --server %s --site %s --domain %s\n",
 				input.ServerName, input.SiteID, input.Domain)
-		} else if skipSSL {
-			fmt.Println("Next steps:")
-			fmt.Printf("  1. Update your DNS records to point to %s\n", targetServer.IP)
-			fmt.Printf("  2. Add www subdomain: press domain add\n")
-			fmt.Printf("  3. Issue SSL certificate: press domain ssl\n")
 		} else {
 			fmt.Println("Next steps:")
 			fmt.Printf("  1. Update your DNS records to point to %s\n", targetServer.IP)
@@ -485,6 +481,7 @@ var siteDeleteCmd = &cobra.Command{
 			"site_id":     targetSite.SiteID,
 			"site_domain": targetSite.PrimaryDomain,
 			"db_host":     targetSite.Database.Host,
+			"php_version": targetSite.PHPVersion,
 		}
 
 		// Create Ansible executor
@@ -518,11 +515,196 @@ var siteDeleteCmd = &cobra.Command{
 	},
 }
 
+// sitePhpVersionCmd represents the site php-version command
+var sitePhpVersionCmd = &cobra.Command{
+	Use:     "php-version",
+	Aliases: []string{"change-php-version", "set-php-version"},
+	Short:   "Change the PHP version of a site",
+	Long: `Change the PHP version used by a site's PHP-FPM pool, Nginx configuration,
+and CLI binary.
+
+Examples:
+  # Interactive mode
+  press site php-version
+
+  # Non-interactive mode (for automation/AI agents)
+  press site php-version --server myserver --site mysite --version 8.4`,
+	Run: func(cmd *cobra.Command, args []string) {
+		mgr, cfg := ensureConfig()
+
+		// Get values from flags
+		serverName, _ := cmd.Flags().GetString("server")
+		siteName, _ := cmd.Flags().GetString("site")
+		newVersion, _ := cmd.Flags().GetString("version")
+
+		// If some but not all flags are provided, that's an error
+		flagCount := 0
+		for _, v := range []string{serverName, siteName, newVersion} {
+			if v != "" {
+				flagCount++
+			}
+		}
+		if flagCount > 0 && flagCount < 3 {
+			color.Red("Error: --server, --site, and --version are all required for non-interactive mode")
+			os.Exit(1)
+		}
+
+		if flagCount == 0 {
+			// Interactive mode: select site, then select new PHP version
+			type SiteOption struct {
+				ServerName string
+				Site       models.Site
+			}
+
+			var siteOptions []SiteOption
+			for _, server := range cfg.Servers {
+				for _, site := range server.Sites {
+					siteOptions = append(siteOptions, SiteOption{
+						ServerName: server.Name,
+						Site:       site,
+					})
+				}
+			}
+
+			if len(siteOptions) == 0 {
+				fmt.Println("No sites available.")
+				return
+			}
+
+			// Select site
+			optionStrings := make([]string, len(siteOptions))
+			for i, opt := range siteOptions {
+				optionStrings[i] = fmt.Sprintf("%s on %s (%s)",
+					opt.Site.PrimaryDomain, opt.ServerName, opt.Site.SiteID)
+			}
+
+			opts := make([]huh.Option[int], len(optionStrings))
+			for i, o := range optionStrings {
+				opts[i] = huh.NewOption(o, i)
+			}
+			var selectedIndex int
+			if err := huh.NewSelect[int]().
+				Title("Select site").
+				Options(opts...).
+				Value(&selectedIndex).
+				Run(); err != nil {
+				color.Red("Error: %v", err)
+				os.Exit(1)
+			}
+
+			serverName = siteOptions[selectedIndex].ServerName
+			siteName = siteOptions[selectedIndex].Site.SiteID
+
+			// Select new PHP version
+			versionOpts := make([]huh.Option[string], len(models.SupportedPHPVersions))
+			for i, v := range models.SupportedPHPVersions {
+				versionOpts[i] = huh.NewOption(v, v)
+			}
+			if err := huh.NewSelect[string]().
+				Title("New PHP version").
+				Description("The site's PHP-FPM pool and Nginx config will be migrated").
+				Options(versionOpts...).
+				Value(&newVersion).
+				Run(); err != nil {
+				color.Red("Error: %v", err)
+				os.Exit(1)
+			}
+		}
+
+		// Validate the target PHP version
+		validVersion := false
+		for _, v := range models.SupportedPHPVersions {
+			if v == newVersion {
+				validVersion = true
+				break
+			}
+		}
+		if !validVersion {
+			color.Red("Error: Unsupported PHP version '%s'", newVersion)
+			fmt.Printf("Supported versions: %s\n", strings.Join(models.SupportedPHPVersions, ", "))
+			os.Exit(1)
+		}
+
+		// Find the server and site
+		var targetServer *models.Server
+		var targetSite *models.Site
+
+		for i := range cfg.Servers {
+			if cfg.Servers[i].Name == serverName {
+				targetServer = &cfg.Servers[i]
+				for j := range cfg.Servers[i].Sites {
+					if cfg.Servers[i].Sites[j].SiteID == siteName {
+						targetSite = &cfg.Servers[i].Sites[j]
+						break
+					}
+				}
+				break
+			}
+		}
+
+		if targetServer == nil {
+			color.Red("Error: Server '%s' not found", serverName)
+			os.Exit(1)
+		}
+
+		if targetSite == nil {
+			color.Red("Error: Site '%s' not found on server '%s'", siteName, serverName)
+			os.Exit(1)
+		}
+
+		currentVersion := targetSite.PHPVersion
+		if currentVersion == "" {
+			currentVersion = models.DefaultPHPVersion
+		}
+
+		if currentVersion == newVersion {
+			color.Yellow("Site '%s' is already on PHP %s", siteName, currentVersion)
+			return
+		}
+
+		// Prepare extra vars for Ansible
+		extraVars := map[string]interface{}{
+			"site_id":         targetSite.SiteID,
+			"site_domain":     targetSite.PrimaryDomain,
+			"php_version":     currentVersion,
+			"new_php_version": newVersion,
+		}
+
+		// Create Ansible executor
+		executor := ansible.NewExecutor(cfg.Ansible.Path)
+		executor.SetVerbose(Verbose)
+		executor.SetDryRun(DryRun)
+
+		// Execute php_version_change playbook
+		fmt.Println()
+		color.Cyan("═══════════════════════════════════════════════════════")
+		color.Cyan("  Changing PHP version for %s", targetSite.PrimaryDomain)
+		color.Cyan("  %s → %s", currentVersion, newVersion)
+		color.Cyan("═══════════════════════════════════════════════════════")
+		fmt.Println()
+
+		if err := executor.ExecutePlaybook("playbooks/php_version_change.yml", *targetServer, extraVars, cfg.GlobalVars); err != nil {
+			color.Red("\n✗ PHP version change failed: %v", err)
+			os.Exit(1)
+		}
+
+		// Update site configuration
+		stateMgr := state.NewManager(mgr)
+		if err := stateMgr.UpdateSitePHPVersion(serverName, siteName, newVersion); err != nil {
+			color.Red("Warning: Failed to update configuration: %v", err)
+		}
+
+		fmt.Println()
+		color.Green("✓ Site '%s' is now on PHP %s", targetSite.PrimaryDomain, newVersion)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(siteCmd)
 	siteCmd.AddCommand(siteCreateCmd)
 	siteCmd.AddCommand(siteListCmd)
 	siteCmd.AddCommand(siteDeleteCmd)
+	siteCmd.AddCommand(sitePhpVersionCmd)
 
 	// site create flags
 	siteCreateCmd.Flags().Bool("non-interactive", false, "Use flags instead of interactive prompts")
@@ -546,4 +728,9 @@ func init() {
 	siteDeleteCmd.Flags().String("site", "", "Site ID")
 	siteDeleteCmd.Flags().BoolP("force", "f", false, "Force deletion without confirmation")
 	siteDeleteCmd.Flags().Bool("json", false, "Output in JSON format")
+
+	// site php-version flags
+	sitePhpVersionCmd.Flags().String("server", "", "Server name")
+	sitePhpVersionCmd.Flags().String("site", "", "Site ID")
+	sitePhpVersionCmd.Flags().String("version", "", "New PHP version (8.1, 8.2, 8.3, 8.4, 8.5)")
 }

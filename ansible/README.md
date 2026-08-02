@@ -61,6 +61,13 @@ ansible-playbook playbooks/delete_site.yml -i "IP," -u pressctl \
   --extra-vars "system_name=examplecom"
 ```
 
+**Change a site's PHP version:**
+
+```bash
+ansible-playbook playbooks/php_version_change.yml -i "IP," -u pressctl \
+  --extra-vars "site_id=examplecom site_domain=example.com php_version=8.3 new_php_version=8.4"
+```
+
 ## Playbook Overview
 
 | Playbook                          | Purpose                 | User   | Required Variables               |
@@ -69,6 +76,7 @@ ansible-playbook playbooks/delete_site.yml -i "IP," -u pressctl \
 | `website.yml`                     | Create WordPress site   | pressctl | domain, system*name, wp_admin*\* |
 | `playbooks/domain_management.yml` | Add/remove domains, SSL | pressctl | operation, domain                |
 | `playbooks/delete_site.yml`       | Remove site completely  | pressctl | system_name                      |
+| `playbooks/php_version_change.yml`| Change site's PHP version | pressctl | site_id, site_domain, php_version, new_php_version |
 
 ## Roles Architecture
 

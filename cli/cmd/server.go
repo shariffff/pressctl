@@ -340,6 +340,10 @@ Examples:
 			if flagPHP == "" {
 				flagPHP = models.DefaultPHPVersion
 			}
+			if !models.IsValidPHPVersion(flagPHP) {
+				outputError(cmd, "Invalid PHP version", fmt.Errorf("unsupported PHP version '%s'; supported: %v", flagPHP, models.SupportedPHPVersions))
+				os.Exit(1)
+			}
 
 			// Check for duplicate server name
 			for _, server := range cfg.Servers {
@@ -863,7 +867,7 @@ func init() {
 	serverProvisionCmd.Flags().Bool("skip-ssh-check", false, "Skip SSH connectivity check")
 	serverProvisionCmd.Flags().Bool("skip-port-check", false, "Skip port conflict check")
 	serverProvisionCmd.Flags().Bool("skip-check", false, "Skip already-provisioned check")
-	serverProvisionCmd.Flags().String("php-version", "", "PHP version to install (8.1, 8.2, 8.3, 8.4)")
+	serverProvisionCmd.Flags().String("php-version", "", "PHP version to install (8.1, 8.2, 8.3, 8.4, 8.5)")
 	serverProvisionCmd.Flags().Bool("json", false, "Output in JSON format")
 
 	// server health-check flags

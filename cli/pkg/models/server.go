@@ -31,3 +31,13 @@ var SupportedPHPVersions = []string{"8.5", "8.4", "8.3", "8.2", "8.1"}
 
 // DefaultPHPVersion is the default PHP version for new servers
 const DefaultPHPVersion = "8.3"
+
+// IsValidPHPVersion reports whether the given PHP version is supported.
+func IsValidPHPVersion(version string) bool {
+	for _, v := range SupportedPHPVersions {
+		if v == version {
+			return true
+		}
+	}
+	return false
+}

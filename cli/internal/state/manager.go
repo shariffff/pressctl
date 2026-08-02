@@ -192,6 +192,38 @@ func (m *Manager) AddDomainToSite(serverName string, siteID string, domain model
 	return nil
 }
 
+// UpdateSitePHPVersion updates a site's PHP version
+func (m *Manager) UpdateSitePHPVersion(serverName string, siteID string, phpVersion string) error {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	found := false
+	for i := range cfg.Servers {
+		if cfg.Servers[i].Name == serverName {
+			for j := range cfg.Servers[i].Sites {
+				if cfg.Servers[i].Sites[j].SiteID == siteID {
+					cfg.Servers[i].Sites[j].PHPVersion = phpVersion
+					found = true
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("site '%s' not found on server '%s'", siteID, serverName)
+	}
+
+	if err := m.configManager.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return nil
+}
+
 // RemoveDomainFromSite removes a domain from a site's configuration
 func (m *Manager) RemoveDomainFromSite(serverName string, siteID string, domainName string) error {
 	cfg, err := m.configManager.Load()

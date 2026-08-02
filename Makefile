@@ -1,8 +1,6 @@
 .PHONY: all build install install-user test test-cli test-ansible test-full clean fmt lint help \
        molecule-install test-molecule test-molecule-provision test-molecule-website test-molecule-roles \
-       lint-yaml lint-ansible docker-build docker-build-all \
-       docker-build-linux-amd64 docker-build-linux-arm64 \
-       docker-build-darwin-amd64 docker-build-darwin-arm64 docker-build-windows-amd64
+       lint-yaml lint-ansible
 
 # Version from version.txt
 VERSION=$(shell cat version.txt)
@@ -50,6 +48,7 @@ test-ansible:
 	@cd ansible && ansible-playbook --syntax-check website.yml
 	@cd ansible && ansible-playbook --syntax-check playbooks/domain_management.yml
 	@cd ansible && ansible-playbook --syntax-check playbooks/delete_site.yml
+	@cd ansible && ansible-playbook --syntax-check playbooks/php_version_change.yml
 	@echo "✓ Ansible syntax validation passed"
 
 # Format Go code
@@ -61,33 +60,6 @@ fmt:
 lint:
 	@echo "Linting Go code..."
 	@cd cli && make lint
-
-# Docker build (no Go installation required)
-docker-build:
-	@echo "Building pressctl CLI via Docker (v$(VERSION))..."
-	@cd cli && make docker-build VERSION=$(VERSION)
-	@echo "✓ Docker build complete: cli/press"
-
-# Docker build for all platforms
-docker-build-all:
-	@echo "Building pressctl CLI for all platforms (v$(VERSION))..."
-	@cd cli && make docker-build-all VERSION=$(VERSION)
-
-# Individual platform builds
-docker-build-linux-amd64:
-	@cd cli && make docker-build-linux-amd64 VERSION=$(VERSION)
-
-docker-build-linux-arm64:
-	@cd cli && make docker-build-linux-arm64 VERSION=$(VERSION)
-
-docker-build-darwin-amd64:
-	@cd cli && make docker-build-darwin-amd64 VERSION=$(VERSION)
-
-docker-build-darwin-arm64:
-	@cd cli && make docker-build-darwin-arm64 VERSION=$(VERSION)
-
-docker-build-windows-amd64:
-	@cd cli && make docker-build-windows-amd64 VERSION=$(VERSION)
 
 # Clean build artifacts
 clean:
@@ -159,15 +131,6 @@ help:
 	@echo "  build                   - Build the CLI binary (requires Go 1.24+)"
 	@echo "  install                 - Install CLI to /usr/local/bin (requires sudo)"
 	@echo "  install-user            - Install CLI to ~/bin (no sudo required)"
-	@echo ""
-	@echo "Docker builds (no Go required):"
-	@echo "  docker-build            - Build for current platform"
-	@echo "  docker-build-all        - Build for all platforms"
-	@echo "  docker-build-linux-amd64"
-	@echo "  docker-build-linux-arm64"
-	@echo "  docker-build-darwin-amd64  (macOS Intel)"
-	@echo "  docker-build-darwin-arm64  (macOS Apple Silicon)"
-	@echo "  docker-build-windows-amd64"
 	@echo ""
 	@echo "Development:"
 	@echo "  test                    - Run all tests (CLI + Ansible syntax)"

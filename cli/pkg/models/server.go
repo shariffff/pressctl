@@ -15,19 +15,15 @@ type ServerCredentials struct {
 
 // Server represents a managed server
 type Server struct {
-	Name        string            `yaml:"name" validate:"required"`
-	Hostname    string            `yaml:"hostname" validate:"required"`
-	IP          string            `yaml:"ip" validate:"required,ip"`
-	SSH         SSHConfig         `yaml:"ssh"`
-	Credentials ServerCredentials `yaml:"credentials,omitempty"`
-	PHPVersion  string            `yaml:"php_version,omitempty"`
-	Stack       string            `yaml:"stack,omitempty" validate:"omitempty,oneof=traditional frankenphp"`
-	// FrankenPHPRuntime selects how the FrankenPHP runtime is deployed when
-	// Stack == frankenphp: "native" (systemd binary) or "docker" (container).
-	FrankenPHPRuntime string     `yaml:"frankenphp_runtime,omitempty" validate:"omitempty,oneof=native docker"`
-	Status            string     `yaml:"status" validate:"oneof=provisioned unprovisioned error"`
-	ProvisionedAt     *time.Time `yaml:"provisioned_at,omitempty"`
-	Sites             []Site     `yaml:"sites,omitempty"`
+	Name          string            `yaml:"name" validate:"required"`
+	Hostname      string            `yaml:"hostname" validate:"required"`
+	IP            string            `yaml:"ip" validate:"required,ip"`
+	SSH           SSHConfig         `yaml:"ssh"`
+	Credentials   ServerCredentials `yaml:"credentials,omitempty"`
+	PHPVersion    string            `yaml:"php_version,omitempty"`
+	Status        string            `yaml:"status" validate:"oneof=provisioned unprovisioned error"`
+	ProvisionedAt *time.Time        `yaml:"provisioned_at,omitempty"`
+	Sites         []Site            `yaml:"sites,omitempty"`
 }
 
 // SupportedPHPVersions lists PHP versions available for provisioning
@@ -36,71 +32,10 @@ var SupportedPHPVersions = []string{"8.5", "8.4", "8.3", "8.2", "8.1"}
 // DefaultPHPVersion is the default PHP version for new servers
 const DefaultPHPVersion = "8.3"
 
-// Server stack identifiers. The stack determines how the web/runtime layer is
-// provisioned and how sites are served.
-const (
-	// StackTraditional is host-installed Nginx + PHP-FPM (the original stack).
-	StackTraditional = "traditional"
-	// StackFrankenPHP is a Dockerized FrankenPHP container (Caddy + PHP) that
-	// serves all sites and terminates TLS automatically.
-	StackFrankenPHP = "frankenphp"
-)
-
-// DefaultStack is the stack used when a server does not specify one.
-const DefaultStack = StackTraditional
-
-// SupportedStacks lists the stacks available for provisioning.
-var SupportedStacks = []string{StackTraditional, StackFrankenPHP}
-
-// FrankenPHP runtime identifiers. These select how the FrankenPHP runtime is
-// deployed for servers on the frankenphp stack.
-const (
-	// RuntimeNative runs the FrankenPHP static binary under systemd (no Docker).
-	RuntimeNative = "native"
-	// RuntimeDocker runs FrankenPHP inside a Docker container.
-	RuntimeDocker = "docker"
-)
-
-// DefaultFrankenPHPRuntime is used when a frankenphp server does not specify one.
-const DefaultFrankenPHPRuntime = RuntimeNative
-
-// SupportedFrankenPHPRuntimes lists the FrankenPHP runtimes available.
-var SupportedFrankenPHPRuntimes = []string{RuntimeNative, RuntimeDocker}
-
-// EffectiveStack returns the server's stack, falling back to DefaultStack when
-// unset. This keeps configs written before stack selection behaving as
-// traditional with no migration required.
-func (s Server) EffectiveStack() string {
-	if s.Stack == "" {
-		return DefaultStack
-	}
-	return s.Stack
-}
-
-// IsValidStack reports whether the given stack identifier is supported.
-func IsValidStack(stack string) bool {
-	for _, v := range SupportedStacks {
-		if v == stack {
-			return true
-		}
-	}
-	return false
-}
-
-// EffectiveFrankenPHPRuntime returns the server's FrankenPHP runtime, falling
-// back to DefaultFrankenPHPRuntime when unset. Only meaningful for the
-// frankenphp stack; harmless to call otherwise.
-func (s Server) EffectiveFrankenPHPRuntime() string {
-	if s.FrankenPHPRuntime == "" {
-		return DefaultFrankenPHPRuntime
-	}
-	return s.FrankenPHPRuntime
-}
-
-// IsValidFrankenPHPRuntime reports whether the given runtime identifier is supported.
-func IsValidFrankenPHPRuntime(runtime string) bool {
-	for _, v := range SupportedFrankenPHPRuntimes {
-		if v == runtime {
+// IsValidPHPVersion reports whether the given PHP version is supported.
+func IsValidPHPVersion(version string) bool {
+	for _, v := range SupportedPHPVersions {
+		if v == version {
 			return true
 		}
 	}

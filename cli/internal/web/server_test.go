@@ -19,7 +19,6 @@ func TestBuildViewAndRender(t *testing.T) {
 			Hostname:      "web1.example.com",
 			IP:            "203.0.113.10",
 			Status:        "provisioned",
-			Stack:         "frankenphp",
 			SSH:           models.SSHConfig{User: "pressctl", Port: 2222},
 			ProvisionedAt: &created,
 			Sites: []models.Site{{

@@ -15,7 +15,7 @@ A command-line interface tool for managing WordPress hosting infrastructure usin
 
 ### Prerequisites
 
-- Go 1.24 or higher (or Docker for building without Go)
+- Go 1.24 or higher
 - Ansible installed and configured
 - SSH access to target servers
 
@@ -27,9 +27,6 @@ cd /path/to/ansible/cli
 
 # Build the binary (requires Go 1.24+)
 make build
-
-# Or build using Docker (no Go required)
-make docker-build
 
 # Install to /usr/local/bin (requires sudo)
 make install
@@ -204,6 +201,12 @@ press site delete --server production-1 --site mysiteid
 
 # Force delete without confirmation
 press site delete --server production-1 --site mysiteid --force
+
+# Change a site's PHP version (interactive selection)
+press site php-version
+
+# Change a specific site's PHP version (8.1–8.5)
+press site php-version --server production-1 --site mysiteid --version 8.4
 ```
 
 ### Domain Management

@@ -1,6 +1,0 @@
-#!/bin/sh
-# {{ ansible_managed }}
-# WP-CLI wrapper for the native FrankenPHP runtime: runs wp.phar with the
-# php-zts CLI (from the static-php deb repo), which shares php.ini and
-# extensions with the FrankenPHP server via {{ frankenphp_php_ini_dir }}.
-exec {{ frankenphp_php_bin }} {{ frankenphp_wp_phar }} "$@"

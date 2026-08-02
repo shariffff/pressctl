@@ -7,12 +7,12 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
 	"github.com/pressctl/cli/internal/prompt"
 	"github.com/pressctl/cli/internal/state"
 	"github.com/pressctl/cli/internal/utils"
 	"github.com/pressctl/cli/pkg/models"
+	"github.com/spf13/cobra"
 )
 
 // domainCmd represents the domain command
@@ -86,16 +86,6 @@ Examples:
 			"operation": "add_domain",
 			"domain":    input.Domain,
 			"site_id":   input.SiteID,
-			"stack":     targetServer.EffectiveStack(),
-		}
-		if targetServer.EffectiveStack() == models.StackFrankenPHP {
-			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
-		}
-
-		// The FrankenPHP stack roots the alias config at the site's primary
-		// domain directory, so pass it through when we can resolve it.
-		if primary := primaryDomainForSite(targetServer, input.SiteID); primary != "" {
-			extraVars["site_domain"] = primary
 		}
 
 		// Create Ansible executor
@@ -139,7 +129,6 @@ Examples:
 			sslVars := map[string]interface{}{
 				"operation": "issue_ssl",
 				"domain":    input.Domain,
-				"stack":     targetServer.EffectiveStack(),
 			}
 
 			sslResult, err := executor.ExecutePlaybookWithResult("playbooks/domain_management.yml", *targetServer, sslVars, cfg.GlobalVars)
@@ -274,10 +263,6 @@ Examples:
 		extraVars := map[string]interface{}{
 			"operation": "remove_domain",
 			"domain":    input.Domain,
-			"stack":     targetServer.EffectiveStack(),
-		}
-		if targetServer.EffectiveStack() == models.StackFrankenPHP {
-			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
 		}
 
 		// Create Ansible executor
@@ -363,23 +348,10 @@ Examples:
 			os.Exit(1)
 		}
 
-		// FrankenPHP serves TLS automatically via Caddy; there is no Certbot step.
-		if targetServer.EffectiveStack() == models.StackFrankenPHP {
-			color.Green("\n✓ This server uses the FrankenPHP stack — HTTPS is handled automatically by Caddy.")
-			fmt.Println()
-			fmt.Println("No manual SSL issuance is needed. Once DNS for the domain points at")
-			fmt.Printf("%s, Caddy obtains a Let's Encrypt certificate on first access.\n", targetServer.IP)
-			return
-		}
-
 		// Prepare extra vars for Ansible
 		extraVars := map[string]interface{}{
 			"operation": "issue_ssl",
 			"domain":    input.Domain,
-			"stack":     targetServer.EffectiveStack(),
-		}
-		if targetServer.EffectiveStack() == models.StackFrankenPHP {
-			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
 		}
 
 		// Create Ansible executor

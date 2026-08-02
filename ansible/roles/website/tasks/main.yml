@@ -1,5 +1,5 @@
 ---
-# Shared across both stacks: system user/group, directory structure, database.
+# System user/group, directory structure, database, web layer, WordPress, cron.
 - name: Import users tasks
   ansible.builtin.import_tasks: tasks/users.yml
 
@@ -9,32 +9,14 @@
 - name: Import database tasks
   ansible.builtin.import_tasks: tasks/database.yml
 
-# Traditional stack: host Nginx + PHP-FPM, WP-CLI on the host.
-- name: Import PHP tasks (traditional)
+- name: Import PHP tasks
   ansible.builtin.include_tasks: tasks/php.yml
-  when: stack | default('traditional') == 'traditional'
 
-- name: Import Nginx tasks (traditional)
+- name: Import Nginx tasks
   ansible.builtin.include_tasks: tasks/nginx.yml
-  when: stack | default('traditional') == 'traditional'
 
-- name: Import WordPress tasks (traditional)
+- name: Import WordPress tasks
   ansible.builtin.include_tasks: tasks/wordpress.yml
-  when: stack | default('traditional') == 'traditional'
 
-- name: Import cron tasks (traditional)
+- name: Import cron tasks
   ansible.builtin.include_tasks: tasks/cron.yml
-  when: stack | default('traditional') == 'traditional'
-
-# FrankenPHP stack: Caddy site config + WP-CLI inside the container.
-- name: Import FrankenPHP site tasks
-  ansible.builtin.include_tasks: tasks/frankenphp_site.yml
-  when: stack | default('traditional') == 'frankenphp'
-
-- name: Import WordPress tasks (frankenphp)
-  ansible.builtin.include_tasks: tasks/wordpress_franken.yml
-  when: stack | default('traditional') == 'frankenphp'
-
-- name: Import cron tasks (frankenphp)
-  ansible.builtin.include_tasks: tasks/cron_franken.yml
-  when: stack | default('traditional') == 'frankenphp'

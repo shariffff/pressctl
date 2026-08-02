@@ -15,15 +15,6 @@
   roles:
     - { role: bootstrap, tags: 'bootstrap' }
     - { role: database, tags: 'database' }
-    # Traditional web layer: host-installed Nginx + PHP-FPM
-    - { role: nginx, tags: 'nginx', when: "stack | default('traditional') == 'traditional'" }
-    - { role: php, tags: 'php', when: "stack | default('traditional') == 'traditional'" }
-    # FrankenPHP web layer. The 'docker' role only runs for the docker runtime;
-    # the native runtime installs the FrankenPHP binary under systemd instead.
-    - role: docker
-      tags: 'docker'
-      when:
-        - stack | default('traditional') == 'frankenphp'
-        - frankenphp_runtime | default('native') == 'docker'
-    - { role: frankenphp, tags: 'frankenphp', when: "stack | default('traditional') == 'frankenphp'" }
+    - { role: nginx, tags: 'nginx' }
+    - { role: php, tags: 'php' }
     - { role: security, tags: 'security' }

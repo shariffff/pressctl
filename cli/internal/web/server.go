@@ -40,7 +40,6 @@ type serverView struct {
 	Hostname    string
 	IP          string
 	Status      string
-	Stack       string
 	PHPVersion  string
 	Provisioned string
 	SSHCommand  string
@@ -127,7 +126,6 @@ func buildView(configPath string, cfg *config.Config) viewData {
 			Hostname:    s.Hostname,
 			IP:          s.IP,
 			Status:      s.Status,
-			Stack:       s.EffectiveStack(),
 			PHPVersion:  orDash(s.PHPVersion),
 			Provisioned: formatDatePtr(s.ProvisionedAt),
 			SSHCommand:  sshCommand(s),

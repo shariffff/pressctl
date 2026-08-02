@@ -47,15 +47,12 @@
       tags: ["website"]
 
   post_tasks:
-    # Certbot-based SSL only applies to the traditional (Nginx) stack.
-    # FrankenPHP relies on Caddy's automatic HTTPS, so these are skipped.
     # Skip SSL if --extra-vars "skip_ssl=true" is passed
     - name: Check DNS for SSL issuance
       ansible.builtin.include_role:
         name: libs
         tasks_from: check_dns.yml
       when:
-        - stack | default('traditional') == 'traditional'
         - skip_ssl is not defined or not skip_ssl
       tags: ["website", "ssl"]
 
@@ -64,7 +61,6 @@
         name: libs
         tasks_from: issue_ssl.yml
       when:
-        - stack | default('traditional') == 'traditional'
         - skip_ssl is not defined or not skip_ssl
         - dns_matches_server | default(false) | bool
       tags: ["website", "ssl"]

@@ -8,19 +8,15 @@
     site_user: '{{ site_id }}'
     site_group: '{{ site_id }}'
     site_home: '/sites/{{ site_domain }}'
-    is_frankenphp: "{{ stack | default('traditional') == 'frankenphp' }}"
-    fp_runtime: "{{ frankenphp_runtime | default('native') }}"
-    frankenphp_user: frankenphp
-    frankenphp_systemd_unit: frankenphp
-    frankenphp_compose_file: /etc/frankenphp/docker-compose.yml
-    fp_reload_cmd: >-
-      {{
-        'systemctl reload ' ~ (frankenphp_systemd_unit | default('frankenphp'))
-        if (frankenphp_runtime | default('native') == 'native')
-        else ('docker compose -f /etc/frankenphp/docker-compose.yml restart frankenphp')
-      }}
 
   pre_tasks:
+    # Accept the same "domain" variable used by website.yml so the cron entry
+    # (named wp-cron-{{ domain }} at creation) is removed consistently.
+    - name: Resolve site_domain from domain
+      ansible.builtin.set_fact:
+        site_domain: '{{ domain }}'
+      when: domain is defined and domain | length > 0
+
     - name: Validate required variables
       ansible.builtin.assert:
         that:
@@ -30,38 +26,17 @@
         fail_msg: |
           Required variables are missing or empty. Please provide:
             - site_id: Site identifier
-            - site_domain: Domain name of the site to delete
+            - site_domain: Domain name of the site to delete (or pass domain)
             - db_host: Database host (e.g., localhost or localhost:3306)
           Pass these via --extra-vars
 
   tasks:
-    - name: Remove cron job (traditional)
+    - name: Remove cron job
       ansible.builtin.cron:
         name: 'wp-cron-{{ site_domain }}'
         user: '{{ site_user }}'
         state: absent
       ignore_errors: true
-      when: not is_frankenphp | bool
-
-    - name: Remove cron job (frankenphp native)
-      ansible.builtin.cron:
-        name: 'wp-cron-{{ site_domain }}'
-        user: '{{ frankenphp_user }}'
-        state: absent
-      ignore_errors: true
-      when:
-        - is_frankenphp | bool
-        - fp_runtime == 'native'
-
-    - name: Remove cron job (frankenphp docker)
-      ansible.builtin.cron:
-        name: 'wp-cron-{{ site_domain }}'
-        user: root
-        state: absent
-      ignore_errors: true
-      when:
-        - is_frankenphp | bool
-        - fp_runtime == 'docker'
 
     - name: Remove WordPress files
       ansible.builtin.file:
@@ -92,43 +67,28 @@
         path: '{{ site_home }}'
         state: absent
 
-    # Traditional web layer
     - name: Remove Nginx site configuration
       ansible.builtin.file:
         path: '/etc/nginx/sites-enabled/{{ site_domain }}'
         state: absent
       notify: Reload nginx
-      when: not is_frankenphp | bool
 
     - name: Remove Nginx site directory
       ansible.builtin.file:
         path: '/etc/nginx/sites-available/{{ site_domain }}'
         state: absent
       notify: Reload nginx
-      when: not is_frankenphp | bool
 
     - name: Remove PHP-FPM pool configuration
       ansible.builtin.file:
         path: '/etc/php/{{ php_version | default("8.3") }}/fpm/pool.d/{{ site_id }}.conf'
         state: absent
-      notify: Reload php-fpm
-      when: not is_frankenphp | bool
 
-    # FrankenPHP web layer
-    - name: Remove Caddy site configuration
-      ansible.builtin.file:
-        path: '/etc/frankenphp/sites/{{ site_domain }}.caddy'
-        state: absent
-      register: caddy_removed
-      when: is_frankenphp | bool
-
-    - name: Reload FrankenPHP
-      ansible.builtin.command:
-        cmd: "{{ fp_reload_cmd }}"
+    - name: Reload PHP-FPM to release site user
+      ansible.builtin.service:
+        name: php{{ php_version | default('8.3') }}-fpm
+        state: reloaded
       changed_when: true
-      when:
-        - is_frankenphp | bool
-        - caddy_removed is changed
 
     - name: Remove site user
       ansible.builtin.user:

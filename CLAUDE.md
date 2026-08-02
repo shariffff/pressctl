@@ -76,6 +76,14 @@ ansible-playbook playbooks/delete_site.yml -i "IP," -u pressctl \
   --extra-vars "site_id=examplecom"
 ```
 
+**Change a site's PHP version:**
+
+```bash
+cd ansible
+ansible-playbook playbooks/php_version_change.yml -i "IP," -u pressctl \
+  --extra-vars "site_id=examplecom site_domain=example.com php_version=8.3 new_php_version=8.4"
+```
+
 ### Running with Specific Tags
 
 ```bash

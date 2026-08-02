@@ -8,12 +8,12 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/ansible"
 	"github.com/pressctl/cli/internal/prompt"
 	"github.com/pressctl/cli/internal/state"
 	"github.com/pressctl/cli/internal/utils"
 	"github.com/pressctl/cli/pkg/models"
+	"github.com/spf13/cobra"
 )
 
 // siteCmd represents the site command
@@ -115,10 +115,6 @@ var siteCreateCmd = &cobra.Command{
 			sitePHPVersion = models.DefaultPHPVersion
 		}
 
-		// Determine the server's stack
-		stack := targetServer.EffectiveStack()
-		isFrankenPHP := stack == models.StackFrankenPHP
-
 		// Check for --no-ssl flag
 		skipSSL, _ := cmd.Flags().GetBool("no-ssl")
 
@@ -130,10 +126,6 @@ var siteCreateCmd = &cobra.Command{
 			"wp_admin_email":    input.AdminEmail,
 			"wp_admin_password": input.AdminPassword,
 			"php_version":       sitePHPVersion,
-			"stack":             stack,
-		}
-		if isFrankenPHP {
-			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
 		}
 
 		// Add skip_ssl if --no-ssl flag is set
@@ -195,7 +187,6 @@ var siteCreateCmd = &cobra.Command{
 				Host: "localhost",
 			},
 			PHPVersion: sitePHPVersion,
-			Stack:      stack,
 			Metadata: models.Metadata{
 				BackupEnabled: false,
 			},
@@ -214,8 +205,7 @@ var siteCreateCmd = &cobra.Command{
 		fmt.Println()
 
 		// Display appropriate URL based on SSL status.
-		// FrankenPHP terminates TLS via Caddy automatically, so always show https.
-		if sslEnabled || isFrankenPHP {
+		if sslEnabled {
 			fmt.Printf("Site URL:      https://%s\n", input.Domain)
 			fmt.Printf("Admin URL:     https://%s/wp-admin\n", input.Domain)
 		} else {
@@ -227,16 +217,7 @@ var siteCreateCmd = &cobra.Command{
 		fmt.Println()
 
 		// Show SSL status and next steps
-		if isFrankenPHP {
-			// Caddy obtains and renews certificates automatically on first request
-			// once DNS points at the server. No Certbot / domain ssl step needed.
-			color.Green("✓ HTTPS is handled automatically by Caddy")
-			fmt.Println()
-			fmt.Println("Next steps:")
-			fmt.Printf("  1. Point your DNS A record to %s\n", targetServer.IP)
-			fmt.Println("  2. Visit the site — Caddy issues a Let's Encrypt certificate on first access")
-			fmt.Printf("  3. Add a www subdomain: press domain add\n")
-		} else if sslEnabled {
+		if sslEnabled {
 			color.Green("✓ SSL certificate issued automatically")
 			if sslExpiresAt != nil {
 				fmt.Printf("  Certificate expires: %s\n", sslExpiresAt.Format("2006-01-02"))
@@ -457,20 +438,14 @@ var siteDeleteCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		stack := targetServer.EffectiveStack()
-
 		// Show warning and confirm
 		color.Yellow("⚠️  WARNING: This will permanently delete:")
 		fmt.Printf("  - Site: %s (%s)\n", targetSite.PrimaryDomain, targetSite.SiteID)
 		fmt.Printf("  - Server: %s\n", serverName)
 		fmt.Printf("  - All files in /sites/%s\n", targetSite.PrimaryDomain)
 		fmt.Printf("  - Database: %s\n", targetSite.Database.Name)
-		if stack == models.StackFrankenPHP {
-			fmt.Printf("  - Caddy site configuration\n")
-		} else {
-			fmt.Printf("  - Nginx configuration\n")
-			fmt.Printf("  - PHP-FPM pool\n")
-		}
+		fmt.Printf("  - Nginx configuration\n")
+		fmt.Printf("  - PHP-FPM pool\n")
 		fmt.Println()
 
 		force, _ := cmd.Flags().GetBool("force")
@@ -510,10 +485,6 @@ var siteDeleteCmd = &cobra.Command{
 			"site_id":     targetSite.SiteID,
 			"site_domain": targetSite.PrimaryDomain,
 			"db_host":     targetSite.Database.Host,
-			"stack":       stack,
-		}
-		if stack == models.StackFrankenPHP {
-			extraVars["frankenphp_runtime"] = targetServer.EffectiveFrankenPHPRuntime()
 		}
 
 		// Create Ansible executor

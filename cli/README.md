@@ -15,7 +15,7 @@ A command-line interface tool for managing WordPress hosting infrastructure usin
 
 ### Prerequisites
 
-- Go 1.24 or higher (or Docker for building without Go)
+- Go 1.24 or higher
 - Ansible installed and configured
 - SSH access to target servers
 
@@ -27,9 +27,6 @@ cd /path/to/ansible/cli
 
 # Build the binary (requires Go 1.24+)
 make build
-
-# Or build using Docker (no Go required)
-make docker-build
 
 # Install to /usr/local/bin (requires sudo)
 make install

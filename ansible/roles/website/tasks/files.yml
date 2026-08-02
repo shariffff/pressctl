@@ -30,5 +30,3 @@
     state: link
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
-  # FrankenPHP has no host PHP binary; PHP runs inside the container.
-  when: stack | default('traditional') == 'traditional'

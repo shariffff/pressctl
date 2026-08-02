@@ -9,16 +9,12 @@
     login_port: "{{ db_host.split(':')[1] | default('3306') }}"
     config_file: /home/pressctl/.my.cnf
 
-# For the FrankenPHP *docker* runtime the WordPress container connects over the
-# host gateway, so the user must be allowed from the Docker bridge subnet
-# (172.16.0.0/12). The native FrankenPHP runtime and the traditional stack both
-# connect over loopback, so they stay localhost-only.
 - name: Create MySQL user
   community.mysql.mysql_user:
     name: '{{ db_user }}'
     password: '{{ db_pass }}'
     priv: '{{ db_name }}.*:ALL'
-    host: "{{ '172.%' if (stack | default('traditional') == 'frankenphp' and frankenphp_runtime | default('native') == 'docker') else 'localhost' }}"
+    host: 'localhost'
     state: present
     login_host: "{{ db_host.split(':')[0] }}"
     login_port: "{{ db_host.split(':')[1] | default('3306') }}"

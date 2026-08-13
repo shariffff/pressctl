@@ -6,9 +6,9 @@ import (
 	"os/exec"
 
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	"github.com/pressctl/cli/internal/config"
 	"github.com/pressctl/cli/internal/prompt"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 

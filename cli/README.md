@@ -162,6 +162,15 @@ press server provision <name>
 # Provision with options
 press server provision <name> --force              # Skip confirmation
 press server provision <name> --skip-ssh-check     # Skip SSH connectivity test
+
+# Install an additional PHP version (interactive)
+press server php-version add
+
+# Install a specific PHP version on a server
+press server php-version add --server production-1 --version 8.4
+
+# List PHP versions installed on a server
+press server php-version list --server production-1
 ```
 
 ### Site Management

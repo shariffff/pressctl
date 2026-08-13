@@ -35,6 +35,10 @@ func (m *Manager) MarkServerProvisioned(serverName string) error {
 			now := time.Now()
 			cfg.Servers[i].Status = "provisioned"
 			cfg.Servers[i].ProvisionedAt = &now
+			// Track the server's default PHP version as installed
+			if cfg.Servers[i].PHPVersion != "" && !cfg.Servers[i].HasPHPVersion(cfg.Servers[i].PHPVersion) {
+				cfg.Servers[i].PHPVersions = append(cfg.Servers[i].PHPVersions, cfg.Servers[i].PHPVersion)
+			}
 			found = true
 			break
 		}
@@ -96,6 +100,35 @@ func (m *Manager) GetServer(serverName string) (*models.Server, error) {
 	}
 
 	return nil, fmt.Errorf("server not found: %s", serverName)
+}
+
+// AddServerPHPVersion records an additional PHP version installed on a server
+func (m *Manager) AddServerPHPVersion(serverName string, phpVersion string) error {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	found := false
+	for i := range cfg.Servers {
+		if cfg.Servers[i].Name == serverName {
+			if !cfg.Servers[i].HasPHPVersion(phpVersion) {
+				cfg.Servers[i].PHPVersions = append(cfg.Servers[i].PHPVersions, phpVersion)
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("server not found: %s", serverName)
+	}
+
+	if err := m.configManager.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return nil
 }
 
 // AddSiteToServer adds a site to a server's configuration
@@ -208,6 +241,10 @@ func (m *Manager) UpdateSitePHPVersion(serverName string, siteID string, phpVers
 					found = true
 					break
 				}
+			}
+			// Record the version as installed on the server
+			if !cfg.Servers[i].HasPHPVersion(phpVersion) {
+				cfg.Servers[i].PHPVersions = append(cfg.Servers[i].PHPVersions, phpVersion)
 			}
 			break
 		}

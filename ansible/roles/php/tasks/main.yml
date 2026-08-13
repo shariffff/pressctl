@@ -12,9 +12,13 @@
   retries: 3
   delay: 5
 
+- name: Compute PHP {{ php_version }} package list
+  ansible.builtin.set_fact:
+    php_install_packages: "{{ (php_extensions | reject('equalto', 'opcache') | list if php_version in (php_opcache_bundled_versions | default([])) else php_extensions) | map('regex_replace', '^(.*)$', 'php' ~ php_version ~ '-\\1') | list + ['libpcre2-8-0'] }}"
+
 - name: Install PHP {{ php_version }} and extensions
   ansible.builtin.apt:
-    name: "{{ php_extensions | map('regex_replace', '^(.*)$', 'php' ~ php_version ~ '-\\1') | list + ['libpcre2-8-0'] }}"
+    name: "{{ php_install_packages }}"
     state: present
     update_cache: "{{ add_repository.changed }}"
   register: php_install

@@ -8,7 +8,10 @@ server {
 
 	server_name {{ domain }}; # {{ ansible_managed }}
 
-    ssl_certificate /etc/cloudflare/certs/sailurl.crt; # Ansible managed
+	# To discourage search engine to include temporary *.sailurl.com  urls.
+	add_header  X-Robots-Tag "noindex, nofollow, nosnippet, noarchive";
+
+	ssl_certificate /etc/cloudflare/certs/sailurl.crt; # Ansible managed
 	ssl_certificate_key /etc/cloudflare/certs/sailurl.key; # Ansible managed
 
 	root /sites/{{ domain }}/files/;

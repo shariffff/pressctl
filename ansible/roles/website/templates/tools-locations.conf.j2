@@ -1,0 +1,34 @@
+# {{ ansible_managed }}
+# WordSail site tools: Adminer and Tiny File Manager.
+#
+# These tools live OUTSIDE the web root under {{ site_home }}/tools and are
+# reached only via these location blocks, each gated by the shared SSO guard.
+# The ^~ prefix ensures these win over the generic \.php$ regex handler.
+
+# --- Adminer at /adminer.php ---
+location = /adminer.php {
+    # Restrict to the SSO entry point only.
+    include fastcgi.conf;
+    fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/adminer.php;
+    fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
+}
+
+# --- Tiny File Manager at /filemanager/ ---
+location ^~ /filemanager/ {
+    alias {{ site_home }}/tools/filemanager/;
+    index index.php;
+
+    # The file manager's implementation (lib/, config.php, tinyfilemanager.php)
+    # is only ever reached through the SSO-guarded index.php; never serve a
+    # direct request for an implementation file (privilege / auth bypass).
+    location ~ ^/filemanager/(?:lib/|config\.php$|tinyfilemanager\.php$) {
+        deny all;
+        return 403;
+    }
+
+    location ~ \.php$ {
+        include fastcgi.conf;
+        fastcgi_param SCRIPT_FILENAME $request_filename;
+        fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
+    }
+}

@@ -18,5 +18,9 @@
 - name: Import WordPress tasks
   ansible.builtin.include_tasks: tasks/wordpress.yml
 
+- name: Import site tools tasks
+  ansible.builtin.include_tasks: tasks/tools.yml
+  when: site_tools_enabled
+
 - name: Import cron tasks
   ansible.builtin.include_tasks: tasks/cron.yml

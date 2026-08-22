@@ -1,0 +1,92 @@
+---
+# Website Role - Site Tools
+# Deploys an SSO-guarded Tiny File Manager and Adminer, both living outside
+# the web root under {{ site_home }}/tools and reached via dedicated nginx
+# location blocks. Access is gated by the shared SSO guard, exactly like the
+# WordPress admin SSO must-use plugin.
+
+- name: Create site tools directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0700"
+  loop:
+    - "{{ site_home }}/tools"
+    - "{{ site_home }}/tools/filemanager"
+    - "{{ site_home }}/tools/filemanager/lib"
+    - "{{ site_home }}/tools/files"
+
+- name: Download Tiny File Manager
+  ansible.builtin.get_url:
+    url: "{{ tinyfilemanager_url }}"
+    dest: "{{ site_home }}/tools/filemanager/lib/tinyfilemanager.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0644"
+    checksum: "sha256:{{ tinyfilemanager_sha256 }}"
+  become: true
+
+- name: Download Adminer
+  ansible.builtin.get_url:
+    url: "{{ adminer_url }}"
+    dest: "{{ site_home }}/tools/adminer-6.0.1.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0644"
+    checksum: "sha256:{{ adminer_sha256 }}"
+  become: true
+
+- name: Deploy shared SSO guard
+  ansible.builtin.template:
+    src: sso-guard.php.j2
+    dest: "{{ site_home }}/tools/sso-guard.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0644"
+
+- name: Deploy Tiny File Manager guard entry
+  ansible.builtin.template:
+    src: filemanager-index.php.j2
+    dest: "{{ site_home }}/tools/filemanager/index.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0644"
+
+- name: Deploy Tiny File Manager config override
+  ansible.builtin.template:
+    src: filemanager-config.php.j2
+    dest: "{{ site_home }}/tools/filemanager/lib/config.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0644"
+
+- name: Deploy Adminer SSO entry
+  ansible.builtin.template:
+    src: adminer.php.j2
+    dest: "{{ site_home }}/tools/adminer.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0644"
+
+# The site database password must not be world-readable, but the site's
+# PHP-FPM pool runs as {{ site_user }} so it has to be readable by that user.
+# 0600 inside the non-web-accessible tools dir satisfies both.
+- name: Deploy Adminer database credentials
+  ansible.builtin.template:
+    src: db-creds.php.j2
+    dest: "{{ site_home }}/tools/.db-creds.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0600"
+  no_log: true
+
+- name: Drop nginx locations for site tools
+  ansible.builtin.template:
+    src: tools-locations.conf.j2
+    dest: "/etc/nginx/sites-available/{{ domain }}/server/tools-locations.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx

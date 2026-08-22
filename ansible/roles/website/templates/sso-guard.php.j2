@@ -1,0 +1,203 @@
+<?php
+/**
+ * WordSail site-tool SSO guard.
+ *
+ * Standalone counterpart to wordsail-sso.php for tools that are not
+ * WordPress (Tiny File Manager, Adminer). Verifies a single-use panel
+ * token against the control panel, then issues a short-lived cookie that
+ * gates access to the tool.
+ *
+ * Usage:
+ *   require __DIR__ . '/sso-guard.php';
+ *   wordsail_tool_sso_guard('filemanager'); // or 'adminer'
+ *
+ * The cookie name is derived from the tool so each tool has an isolated
+ * session, and the token is only ever consumed on the redirect that
+ * established the session (never left in the address bar afterwards).
+ */
+
+// Guard against direct web access to this file: it defines functions only,
+// so requesting it bare should not be possible to abuse. Nothing else to do.
+if (!defined('ABSPATH') && basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sso-guard.php') {
+    http_response_code(404);
+    exit;
+}
+
+const WORDSAIL_TOOL_SSO_SERVER = '{{ wordsail_sso_server | default("app.wordsail.com") }}';
+const WORDSAIL_TOOL_SSO_ENDPOINT = '/api/hosting/v1/wp-sso/';
+const WORDSAIL_TOOL_SSO_COOKIE_TTL = 3600;      // 1 hour, rolling
+const WORDSAIL_TOOL_SSO_COOKIE_PREFIX = 'wordsail_sso_';
+
+/**
+ * Gate a request for $tool.
+ *
+ * - No cookie + valid ?token=  -> verify against panel, set cookie, redirect clean.
+ * - No cookie, no token        -> render a 401 "sign in from panel" page.
+ * - Cookie present and valid   -> allow (re-issue cookie to roll the TTL).
+ * - Cookie/token invalid       -> 403, never leave a spent token in the URL.
+ */
+function wordsail_tool_sso_guard(string $tool): void
+{
+    $cookie = WORDSAIL_TOOL_SSO_COOKIE_PREFIX . $tool;
+
+    if (wordsail_tool_sso_valid_cookie($cookie)) {
+        wordsail_tool_sso_reissue($cookie);
+        return;
+    }
+
+    $token = isset($_GET['token']) ? trim((string) $_GET['token']) : '';
+    if ($token !== '' && preg_match('/^[a-zA-Z0-9]{64}$/', $token) && wordsail_tool_sso_verify($token)) {
+        wordsail_tool_sso_issue($cookie, $token);
+        wordsail_tool_sso_redirect_clean();
+    }
+
+    wordsail_tool_sso_deny();
+}
+
+/**
+ * Verify a panel token and confirm it was minted for this site. The panel
+ * returns the site's domain, which must match the host being logged into.
+ */
+function wordsail_tool_sso_verify(string $token): bool
+{
+    $ctx = stream_context_create(array(
+        'http' => array(
+            'method'        => 'GET',
+            'timeout'       => 10,
+            'ignore_errors' => true,
+            'header'        => "User-Agent: WordSail Site Tools\r\n",
+        ),
+        'ssl' => array(
+            'verify_peer'      => true,
+            'verify_peer_name' => true,
+        ),
+    ));
+
+    $url = 'https://' . wordsail_tool_sso_server() . WORDSAIL_TOOL_SSO_ENDPOINT . rawurlencode($token);
+    $body = @file_get_contents($url, false, $ctx);
+
+    if ($body === false) {
+        return false;
+    }
+
+    // file_get_contents with ignore_errors swallows status; check it ourselves.
+    $status = 0;
+    foreach ($http_response_header ?? array() as $header) {
+        if (preg_match('#^HTTP/\S+\s+(\d{3})#', $header, $m)) {
+            $status = (int) $m[1];
+        }
+    }
+    if ($status !== 200) {
+        return false;
+    }
+
+    $data = json_decode($body, true);
+    if (!is_array($data) || empty($data['domain']) || !is_string($data['domain'])) {
+        return false;
+    }
+
+    $request_host = wordsail_tool_sso_request_host();
+    return '' !== $request_host && hash_equals(strtolower($data['domain']), $request_host);
+}
+
+/**
+ * Current request host, lowercased and stripped of any port, so
+ * "example.com:443" still matches the panel's "example.com".
+ */
+function wordsail_tool_sso_request_host(): string
+{
+    $host = isset($_SERVER['HTTP_HOST']) ? strtolower(trim((string) $_SERVER['HTTP_HOST'])) : '';
+    if ($host === '') {
+        return '';
+    }
+    return (string) preg_replace('/:\d+$/', '', $host);
+}
+
+/**
+ * Panel host to verify against. Staging panels pass x_src_url, restricted
+ * to *.wordsail.com so tokens cannot be "verified" elsewhere.
+ */
+function wordsail_tool_sso_server(): string
+{
+    if (!empty($_GET['x_src_url'])) {
+        $host = parse_url(filter_var((string) $_GET['x_src_url'], FILTER_SANITIZE_URL), PHP_URL_HOST);
+        if (is_string($host) && preg_match('/^[a-z0-9-]+(\.[a-z0-9-]+)*\.wordsail\.com$/i', $host)) {
+            return strtolower($host);
+        }
+    }
+    return WORDSAIL_TOOL_SSO_SERVER;
+}
+
+/**
+ * Issue the session cookie. The value is a random nonce stored only in the
+ * cookie (HttpOnly, Secure, SameSite=Lax) — it gates access to the tool and
+ * is never persisted server-side.
+ */
+function wordsail_tool_sso_issue(string $cookie, string $token): void
+{
+    $nonce = bin2hex(random_bytes(32));
+    wordsail_tool_sso_set_cookie($cookie, $nonce);
+}
+
+/**
+ * Re-issue (roll) the cookie so an active session never goes stale.
+ */
+function wordsail_tool_sso_reissue(string $cookie): void
+{
+    wordsail_tool_sso_set_cookie($cookie, $_COOKIE[$cookie]);
+}
+
+function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
+{
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+    setcookie(
+        $cookie,
+        $value,
+        array(
+            'expires'  => time() + WORDSAIL_TOOL_SSO_COOKIE_TTL,
+            'path'     => '/',
+            'secure'   => $secure,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        )
+    );
+}
+
+function wordsail_tool_sso_valid_cookie(string $cookie): bool
+{
+    return isset($_COOKIE[$cookie]) && preg_match('/^[a-f0-9]{64}$/', (string) $_COOKIE[$cookie]) === 1;
+}
+
+/**
+ * Redirect back to the clean tool URL (no token in the address bar).
+ */
+function wordsail_tool_sso_redirect_clean(): void
+{
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host   = wordsail_tool_sso_request_host();
+    $uri    = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+
+    // Strip the token and x_src_url params from the current URI.
+    $clean = preg_replace('/([?&])(token|x_src_url)=[^&]*/', '', $uri);
+    $clean = rtrim((string) preg_replace('/[?&]$/', '', $clean), '?');
+
+    header('Location: ' . $scheme . '://' . $host . $clean, true, 302);
+    exit;
+}
+
+/**
+ * 401/403 page for unauthenticated or failed attempts. No token is echoed.
+ */
+function wordsail_tool_sso_deny(): void
+{
+    http_response_code(401);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>Sign in required</title></head>'
+        . '<body style="font-family:sans-serif;text-align:center;padding-top:4rem">'
+        . '<h1>Sign in required</h1>'
+        . '<p>This tool is protected by WordSail SSO. Open it from your WordSail control panel.</p>'
+        . '</body></html>';
+    exit;
+}

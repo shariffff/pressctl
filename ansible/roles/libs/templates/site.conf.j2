@@ -35,6 +35,8 @@ server {
 
 	include sites-available/{{ domain }}/server/*; # {{ ansible_managed }}
 
+	include global/basic-locations.conf; # {{ ansible_managed }}
+
 	# Prevent access to hidden files
 	location ~* /\.(?!well-known\/) {
 		deny all;

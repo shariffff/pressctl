@@ -46,6 +46,17 @@
     group: "{{ site_group }}"
     mode: "0644"
 
+# HMAC key for the SSO session cookie. Must be readable only by the site
+# user (PHP-FPM), never world-readable, and never served by nginx.
+- name: Deploy SSO cookie secret
+  ansible.builtin.copy:
+    content: "{{ sso_secret }}"
+    dest: "{{ site_home }}/tools/.sso-secret"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0600"
+  no_log: true
+
 - name: Deploy Tiny File Manager guard entry
   ansible.builtin.template:
     src: filemanager-index.php.j2

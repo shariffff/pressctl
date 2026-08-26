@@ -11,5 +11,9 @@
 require dirname(__DIR__) . '/sso-guard.php';
 wordsail_tool_sso_guard('filemanager');
 
+// Never let proxies or browsers cache file listings or downloads.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
 // Load the real Tiny File Manager after the guard passes.
 require __DIR__ . '/lib/tinyfilemanager.php';

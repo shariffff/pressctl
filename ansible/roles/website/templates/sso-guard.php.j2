@@ -14,6 +14,11 @@
  * The cookie name is derived from the tool so each tool has an isolated
  * session, and the token is only ever consumed on the redirect that
  * established the session (never left in the address bar afterwards).
+ *
+ * The cookie value is a random nonce with an HMAC-SHA256 over it, keyed by
+ * a per-site secret stored 0600 in .sso-secret next to this file. The HMAC
+ * makes the cookie unforgeable; validation recomputes and compares it with
+ * hash_equals().
  */
 
 // Guard against direct web access to this file: it defines functions only,
@@ -45,13 +50,16 @@ function wordsail_tool_sso_guard(string $tool): void
         return;
     }
 
+    $had_cookie = isset($_COOKIE[$cookie]);
     $token = isset($_GET['token']) ? trim((string) $_GET['token']) : '';
     if ($token !== '' && preg_match('/^[a-zA-Z0-9]{64}$/', $token) && wordsail_tool_sso_verify($token)) {
-        wordsail_tool_sso_issue($cookie, $token);
+        wordsail_tool_sso_issue($cookie);
         wordsail_tool_sso_redirect_clean();
     }
 
-    wordsail_tool_sso_deny();
+    // 401 when no credentials were offered at all; 403 when a cookie or token
+    // was present but invalid, expired, or already consumed.
+    wordsail_tool_sso_deny(($had_cookie || $token !== '') ? 403 : 401);
 }
 
 /**
@@ -129,22 +137,26 @@ function wordsail_tool_sso_server(): string
 }
 
 /**
- * Issue the session cookie. The value is a random nonce stored only in the
- * cookie (HttpOnly, Secure, SameSite=Lax) — it gates access to the tool and
- * is never persisted server-side.
+ * Issue the session cookie. The value is a random nonce plus an HMAC over it
+ * keyed by the per-site secret, so possession of a well-formed cookie is not
+ * enough to authenticate.
  */
-function wordsail_tool_sso_issue(string $cookie, string $token): void
+function wordsail_tool_sso_issue(string $cookie): void
 {
     $nonce = bin2hex(random_bytes(32));
-    wordsail_tool_sso_set_cookie($cookie, $nonce);
+    $value = $nonce . '.' . wordsail_tool_sso_sign($nonce);
+    wordsail_tool_sso_set_cookie($cookie, $value);
 }
 
 /**
- * Re-issue (roll) the cookie so an active session never goes stale.
+ * Re-issue (roll) the cookie so an active session never goes stale. Re-sign
+ * with a fresh nonce so an old valid cookie is never replayed indefinitely.
  */
 function wordsail_tool_sso_reissue(string $cookie): void
 {
-    wordsail_tool_sso_set_cookie($cookie, $_COOKIE[$cookie]);
+    $nonce = bin2hex(random_bytes(32));
+    $value = $nonce . '.' . wordsail_tool_sso_sign($nonce);
+    wordsail_tool_sso_set_cookie($cookie, $value);
 }
 
 function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
@@ -165,9 +177,57 @@ function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
     );
 }
 
+/**
+ * The per-site signing secret. Stored 0600 in .sso-secret alongside this
+ * file and never served by nginx. Absence means the guard is misconfigured:
+ * fail closed rather than silently accepting unsigned cookies.
+ */
+function wordsail_tool_sso_secret(): string
+{
+    static $secret = null;
+
+    if ($secret === null) {
+        $file = __DIR__ . '/.sso-secret';
+        $value = is_readable($file) ? trim((string) @file_get_contents($file)) : '';
+        if ($value === '' || preg_match('/^[a-f0-9]{64}$/', $value) !== 1) {
+            $secret = false;
+        } else {
+            $secret = $value;
+        }
+    }
+
+    return $secret === false ? '' : $secret;
+}
+
+/**
+ * HMAC-SHA256 signature over the cookie nonce, hex encoded.
+ */
+function wordsail_tool_sso_sign(string $nonce): string
+{
+    return hash_hmac('sha256', $nonce, wordsail_tool_sso_secret());
+}
+
 function wordsail_tool_sso_valid_cookie(string $cookie): bool
 {
-    return isset($_COOKIE[$cookie]) && preg_match('/^[a-f0-9]{64}$/', (string) $_COOKIE[$cookie]) === 1;
+    if (!isset($_COOKIE[$cookie])) {
+        return false;
+    }
+
+    $value = (string) $_COOKIE[$cookie];
+
+    // Format: <64 hex nonce>.<64 hex signature>.
+    if (preg_match('/^([a-f0-9]{64})\.([a-f0-9]{64})$/', $value, $m) !== 1) {
+        return false;
+    }
+
+    $secret = wordsail_tool_sso_secret();
+    if ($secret === '') {
+        return false;
+    }
+
+    $expected = hash_hmac('sha256', $m[1], $secret);
+
+    return hash_equals($expected, $m[2]);
 }
 
 /**
@@ -188,12 +248,15 @@ function wordsail_tool_sso_redirect_clean(): void
 }
 
 /**
- * 401/403 page for unauthenticated or failed attempts. No token is echoed.
+ * Deny page for unauthenticated (401) or failed (403) attempts. The token is
+ * never echoed, and the response must never be cached.
  */
-function wordsail_tool_sso_deny(): void
+function wordsail_tool_sso_deny(int $status): void
 {
-    http_response_code(401);
+    http_response_code($status);
     header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
     echo '<!doctype html><html><head><meta charset="utf-8"><title>Sign in required</title></head>'
         . '<body style="font-family:sans-serif;text-align:center;padding-top:4rem">'
         . '<h1>Sign in required</h1>'

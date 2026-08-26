@@ -23,7 +23,6 @@ location ^~ /filemanager/ {
     # direct request for an implementation file (privilege / auth bypass).
     location ~ ^/filemanager/(?:lib/|config\.php$|tinyfilemanager\.php$) {
         deny all;
-        return 403;
     }
 
     location ~ \.php$ {

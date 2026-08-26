@@ -11,6 +11,10 @@
 require __DIR__ . '/sso-guard.php';
 wordsail_tool_sso_guard('adminer');
 
+// Never let proxies or browsers cache database pages.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
 // Pull the per-site database credentials (deployed by ansible, mode 0600).
 require __DIR__ . '/.db-creds.php';
 
@@ -29,7 +33,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 $driver = 'server'; // SQL driver id used by Adminer for MySQL/MariaDB.
-$server = WORDSAIL_DB_SERVER;
+$server = WORDSAIL_DB_SERVER . ':' . WORDSAIL_DB_PORT;
 $dbuser = WORDSAIL_DB_USER;
 $dbname = WORDSAIL_DB_NAME;
 
@@ -58,8 +62,8 @@ function adminer_object()
     return new class extends Adminer\Adminer {
         public function credentials()
         {
-            // Server, username and password Adminer uses to connect.
-            return array(WORDSAIL_DB_SERVER, WORDSAIL_DB_USER, WORDSAIL_DB_PASS);
+            // Server (with port), username and password Adminer uses to connect.
+            return array(WORDSAIL_DB_SERVER . ':' . WORDSAIL_DB_PORT, WORDSAIL_DB_USER, WORDSAIL_DB_PASS);
         }
 
         public function login($login, $password)

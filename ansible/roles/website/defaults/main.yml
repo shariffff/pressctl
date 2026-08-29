@@ -25,3 +25,19 @@ wp_cron_interval: "*/5"  # Every 5 minutes when using system cron
 # File permissions
 site_dir_permissions: "0755"
 site_file_permissions: "0644"
+
+# Site tools (Tiny File Manager + Adminer) behind WordSail SSO
+# Set false to skip deploying the tools entirely
+site_tools_enabled: true
+
+# Root directory that Tiny File Manager manages (separate from WordPress uploads)
+filemanager_root: "{{ site_home }}/tools/files"
+
+# Panel SSO authority
+wordsail_sso_server: "app.wordsail.com"
+
+# Pinned tool downloads
+tinyfilemanager_url: "https://raw.githubusercontent.com/prasathmani/tinyfilemanager/2.6/tinyfilemanager.php"
+tinyfilemanager_sha256: "94677b427bf60e3ee0980b3136273f580b38776e4aae5a6388d9c1528a7e2fe1"
+adminer_url: "https://github.com/vrana/adminer/releases/download/v6.0.1/adminer-6.0.1.php"
+adminer_sha256: "1815c03f26e21d533e729c0b09bc69a59c902a6440409d013105ee679dff006c"

@@ -1,0 +1,34 @@
+<?php
+/**
+ * WordSail Tiny File Manager configuration override.
+ *
+ * TFM auto-includes config.php from its own directory when present. We use
+ * it to disable TFM's built-in auth (SSO is the only gate) and to point the
+ * file manager at a dedicated root directory that is separate from the
+ * WordPress install.
+ */
+
+// SSO gates access, so disable TFM's own username/password login.
+$use_auth = false;
+
+// Dedicated managed root for this site; never the web root or wp-content.
+$root_path = '{{ filemanager_root }}';
+
+// Friendly browser title.
+define('APP_TITLE', 'WordSail Files');
+
+// Keep hidden files out of listings by default.
+$show_hidden_files = false;
+
+// Disallow executing/serving sensitive types. These apply to rename/create.
+$allowed_file_extensions = '';
+
+// Upload anything (site own files) but never archive bombs that could
+// overwrite the manager itself; keep things simple and allow all.
+$allowed_upload_extensions = '';
+
+// Do not use the online document viewers (sends file URLs to third parties).
+$online_viewer = false;
+
+// Only UTC-aware: keep the panel timezone-neutral for now.
+$default_timezone = '{{ app_timezone | default("Etc/UTC") }}';

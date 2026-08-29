@@ -1,0 +1,12 @@
+<?php
+// {{ ansible_managed }}
+// Per-site database credentials for the WordSail Adminer tool.
+// Do not edit by hand: this file is (re)written by ansible.
+// Its permissions are 0600 and it is only reachable through PHP as the
+// site user — never served directly by nginx.
+
+define('WORDSAIL_DB_SERVER', '{{ db_host.split(":")[0] }}');
+define('WORDSAIL_DB_PORT',   '{{ db_host.split(":")[1] | default("3306") }}');
+define('WORDSAIL_DB_USER',   '{{ db_user }}');
+define('WORDSAIL_DB_PASS',   '{{ db_pass }}');
+define('WORDSAIL_DB_NAME',   '{{ db_name }}');

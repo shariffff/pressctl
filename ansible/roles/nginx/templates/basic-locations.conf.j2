@@ -4,7 +4,7 @@
 # so search engines never index staging URLs.
 location = /robots.txt {
 	if ($host ~* "(sailurl.com)$") {
-		default_type text/plain;
+		add_header Content-Type text/plain;
 		return 200 "# Changes to this robots.txt are blocked for *sailurl.com domains.\n# Only available for custom domains.\n\nUser-agent: *\nDisallow: /\n\n";
 	}
 	allow all;

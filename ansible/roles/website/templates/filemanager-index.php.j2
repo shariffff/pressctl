@@ -1,0 +1,19 @@
+<?php
+/**
+ * WordSail SSO-guarded entry point for Tiny File Manager.
+ *
+ * Gate the request, then hand off to the real Tiny File Manager script in
+ * ./lib/. Because every navigation, upload and AJAX call goes through this
+ * file, the SSO cookie covers the whole tool. The implementation files in
+ * ./lib/ are never served directly by nginx.
+ */
+
+require dirname(__DIR__) . '/sso-guard.php';
+wordsail_tool_sso_guard('filemanager');
+
+// Never let proxies or browsers cache file listings or downloads.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Load the real Tiny File Manager after the guard passes.
+require __DIR__ . '/lib/tinyfilemanager.php';

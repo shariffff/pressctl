@@ -1,0 +1,96 @@
+<?php
+/**
+ * WordSail SSO-guarded Adminer entry.
+ *
+ * Gate the request with the shared SSO guard, then boot Adminer. The
+ * adminer_object() hook below auto-logs into this site's own database using
+ * credentials stored in a sibling file that only the site user can read, so
+ * panel users never see or enter database credentials.
+ */
+
+require __DIR__ . '/sso-guard.php';
+wordsail_tool_sso_guard('adminer');
+
+// Never let proxies or browsers cache database pages.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Pull the per-site database credentials (deployed by ansible, mode 0600).
+require __DIR__ . '/.db-creds.php';
+
+/*
+ * Transparent auto-login.
+ *
+ * Adminer only logs in when the request carries a `username` and a string
+ * password is present in `get_password()`. On the very first hit there is
+ * none, so Adminer would otherwise render its login form. To skip that we
+ * seed Adminer's own password store (the same layout set_password() uses)
+ * and present the driver/username/db as if already authenticated, letting
+ * credentials()/login() below complete the connection.
+ */
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start(); // phpcs:ignore
+}
+
+$driver = 'server'; // SQL driver id used by Adminer for MySQL/MariaDB.
+$server = WORDSAIL_DB_SERVER . ':' . WORDSAIL_DB_PORT;
+$dbuser = WORDSAIL_DB_USER;
+$dbname = WORDSAIL_DB_NAME;
+
+// Make Adminer resolve DRIVER / SERVER / DB to our site account.
+$_GET['server']  = $server;
+$_GET['username'] = $dbuser;
+if (!isset($_GET['db'])) {
+    $_GET['db'] = $dbname;
+}
+
+// Seed the password exactly as Adminer\set_password() stores it.
+$_SESSION['pwds'][$driver][$server][$dbuser] = WORDSAIL_DB_PASS;
+if (empty($_SESSION['token'])) {
+    $_SESSION['token'] = rand(1, 1000000);
+}
+
+/**
+ * Auto-login as the site's database user once SSO has granted access.
+ *
+ * Override signatures must match the compiled Adminer base class (no
+ * parameter or return type declarations) or PHP throws a fatal declaration
+ * error. This is the documented adminer_object() extension pattern.
+ */
+function adminer_object()
+{
+    return new class extends Adminer\Adminer {
+        public function credentials()
+        {
+            // Server (with port), username and password Adminer uses to connect.
+            return array(WORDSAIL_DB_SERVER . ':' . WORDSAIL_DB_PORT, WORDSAIL_DB_USER, WORDSAIL_DB_PASS);
+        }
+
+        public function login($login, $password)
+        {
+            // SSO already authenticated the human; accept the site account.
+            return true;
+        }
+
+        public function database()
+        {
+            // Preselect this site's database.
+            return WORDSAIL_DB_NAME;
+        }
+
+        public function permanentLogin($create = false)
+        {
+            // Keep the session alive for the life of the SSO cookie.
+            return 'wordsail';
+        }
+
+        public function loginForm()
+        {
+            // Suppress the login form: there is nothing to enter.
+            echo '<p style="text-align:center;font-weight:bold">Signed in via WordSail SSO</p>';
+        }
+    };
+}
+
+$base = dirname(__FILE__);
+require $base . '/adminer-6.0.1.php';

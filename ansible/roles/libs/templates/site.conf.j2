@@ -2,13 +2,17 @@ fastcgi_cache_path /cache/{{ domain }} levels=1:2 keys_zone={{ domain }}:100m in
 include sites-available/{{ domain }}/before/*; # {{ ansible_managed }}
 
 server {
-	listen 80; # {{ ansible_managed }}
-	listen [::]:80; # {{ ansible_managed }}
+	listen 443 ssl; # Ansible managed
+	listen [::]:443 ssl; # Ansible managed
+	http2 on; # Ansible managed
 
 	server_name {{ domain }}; # {{ ansible_managed }}
 
-    # ssl_certificate {{ ansible_managed }}
-    # ssl_certificate_key {{ ansible_managed }}
+	# To discourage search engine to include temporary *.sailurl.com  urls.
+	add_header  X-Robots-Tag "noindex, nofollow, nosnippet, noarchive";
+
+	ssl_certificate /etc/cloudflare/certs/sailurl.crt; # Ansible managed
+	ssl_certificate_key /etc/cloudflare/certs/sailurl.key; # Ansible managed
 
 	root /sites/{{ domain }}/files/;
 
@@ -30,6 +34,8 @@ server {
 	add_header Referrer-Policy "strict-origin-when-cross-origin";
 
 	include sites-available/{{ domain }}/server/*; # {{ ansible_managed }}
+
+	include global/basic-locations.conf; # {{ ansible_managed }}
 
 	# Prevent access to hidden files
 	location ~* /\.(?!well-known\/) {

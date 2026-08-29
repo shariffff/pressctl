@@ -82,7 +82,7 @@ func PromptSiteCreate(servers []models.Server) (*SiteInput, error) {
 	if strings.TrimSpace(input.AdminUser) == "" {
 		input.AdminUser = "admin"
 	}
-	input.SiteID = generateUniqueSiteID(input.Domain, provisionedServers[serverIndex].Sites)
+	input.SiteID = generateUniqueSiteID(input.Domain, AllSites(servers))
 
 	// 3. Password
 	var useGenerated bool
@@ -204,6 +204,29 @@ func siteIDExists(sites []models.Site, id string) bool {
 // GenerateSiteID is exported for use by cmd package in non-interactive mode
 func GenerateSiteID(domain string, existingSites []models.Site) string {
 	return generateUniqueSiteID(domain, existingSites)
+}
+
+// AllSites flattens every site across all servers. Used so site IDs are
+// globally unique, not just unique within a single server.
+func AllSites(servers []models.Server) []models.Site {
+	var all []models.Site
+	for _, s := range servers {
+		all = append(all, s.Sites...)
+	}
+	return all
+}
+
+// EnsureSiteIDUnique returns an error if siteID already exists on any server,
+// naming the server where the collision lives.
+func EnsureSiteIDUnique(siteID string, servers []models.Server) error {
+	for _, s := range servers {
+		for _, site := range s.Sites {
+			if site.SiteID == siteID {
+				return fmt.Errorf("site ID '%s' already exists on server '%s'", siteID, s.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // GenerateSecurePassword generates a cryptographically secure random password

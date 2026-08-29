@@ -1,19 +1,26 @@
 ---
 # Change the PHP version used by an existing WordPress site.
 #
+# Assumes all PHP versions involved are already installed and configured on
+# the host. This playbook only performs the switchover itself: it does not
+# install packages or touch php.ini.
+#
 # Required variables (pass via --extra-vars):
 #   site_id          Site identifier (also used as user/group/db name)
 #   site_domain      Primary domain of the site (site_home is /sites/<site_domain>)
 #   php_version      Current PHP version of the site
-#   new_php_version  Target PHP version (e.g. 8.4)
+#   new_php_version  Target PHP version (e.g. 8.4), already installed on the host
 #
-# The new PHP version and its extensions are installed, the site's PHP-FPM
-# pool is copied to the new version's directory, the Nginx fastcgi_pass socket
-# is re-pointed, and the site's local php binary symlink is updated. The old
-# pool configuration is removed once the switchover is complete.
+# The site's PHP-FPM pool is copied to the new version's directory, the
+# Nginx fastcgi_pass socket is re-pointed, and the site's local php binary
+# symlink is updated. The old pool configuration is removed once the
+# switchover is complete.
 - name: Change PHP Version for a WordPress Site
   hosts: webservers
   become: true
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
   vars:
     site_user: '{{ site_id }}'
     site_group: '{{ site_id }}'
@@ -33,57 +40,10 @@
             - site_id: Site identifier
             - site_domain: Domain name of the site
             - php_version: Current PHP version of the site
-            - new_php_version: Target PHP version (different from current)
+            - new_php_version: Target PHP version (different from current, already installed on host)
           Pass these via --extra-vars
 
   tasks:
-    # ── Install and configure the new PHP version (same as the php role) ──
-    - name: Install PHP {{ new_php_version }} and extensions
-      ansible.builtin.apt:
-        name: "{{ php_extensions | map('regex_replace', '^(.*)$', 'php' ~ new_php_version ~ '-\\1') | list + ['libpcre2-8-0'] }}"
-        state: present
-        update_cache: true
-      register: php_install
-      until: php_install is success
-      retries: 3
-      delay: 5
-
-    - name: Configure PHP settings for {{ new_php_version }}
-      ansible.builtin.lineinfile:
-        path: "/etc/php/{{ new_php_version }}/fpm/php.ini"
-        regexp: "^;?{{ item.key }}"
-        line: "{{ item.key }} = {{ item.value }}"
-        state: present
-      loop:
-        - { key: upload_max_filesize, value: "{{ php_upload_max_filesize | default('64M') }}" }
-        - { key: post_max_size, value: "{{ php_post_max_size | default('64M') }}" }
-        - { key: memory_limit, value: "{{ php_memory_limit | default('256M') }}" }
-        - { key: max_execution_time, value: "{{ php_max_execution_time | default(300) }}" }
-        - { key: max_input_vars, value: "{{ php_max_input_vars | default(3000) }}" }
-
-    - name: Configure PHP disabled functions for {{ new_php_version }}
-      ansible.builtin.lineinfile:
-        path: "/etc/php/{{ new_php_version }}/fpm/php.ini"
-        regexp: "^;?disable_functions"
-        line: "disable_functions = {{ php_disabled_functions | join(',') }}"
-        state: present
-
-    - name: Configure PHP-FPM default pool process manager for {{ new_php_version }}
-      ansible.builtin.lineinfile:
-        path: "/etc/php/{{ new_php_version }}/fpm/pool.d/www.conf"
-        regexp: "^pm ="
-        line: "pm = {{ php_fpm_pm }}"
-        state: present
-
-    - name: Configure ImageMagick PDF policy
-      ansible.builtin.lineinfile:
-        path: /etc/ImageMagick-6/policy.xml
-        regexp: '<policy\s+domain="coder"\s+rights="none"\s+pattern="PDF"\s+/>'
-        line: '  <policy domain="coder" rights="{{ imagemagick_pdf_policy }}" pattern="PDF" />'
-        state: present
-        backrefs: true
-
-    # ── Migrate the site to the new PHP version ──
     - name: Copy PHP-FPM pool configuration to {{ new_php_version }}
       ansible.builtin.copy:
         src: '/etc/php/{{ php_version }}/fpm/pool.d/{{ site_id }}.conf'
@@ -96,8 +56,8 @@
     - name: Update PHP-FPM pool socket to {{ new_php_version }}
       ansible.builtin.lineinfile:
         path: '/etc/php/{{ new_php_version }}/fpm/pool.d/{{ site_id }}.conf'
-        regexp: '^(listen = /run/php/php){{ php_version }}-{{ site_id }}(\.sock)$'
-        line: '\1{{ new_php_version }}-{{ site_id }}\2'
+        regexp: '^(?P<prefix>listen = /run/php/php){{ php_version }}-{{ site_id }}(?P<suffix>\.sock)$'
+        line: '\g<prefix>{{ new_php_version }}-{{ site_id }}\g<suffix>'
         backrefs: true
 
     - name: Set ACL for PHP-FPM pool config
@@ -113,8 +73,8 @@
     - name: Update Nginx fastcgi_pass socket to {{ new_php_version }}
       ansible.builtin.lineinfile:
         path: '/etc/nginx/sites-available/{{ site_domain }}/{{ site_domain }}'
-        regexp: '^(\s*fastcgi_pass unix:/run/php/php){{ php_version }}-{{ site_id }}(\.sock;)$'
-        line: '\1{{ new_php_version }}-{{ site_id }}\2'
+        regexp: '^(?P<prefix>\s*fastcgi_pass unix:/run/php/php){{ php_version }}-{{ site_id }}(?P<suffix>\.sock;)$'
+        line: '\g<prefix>{{ new_php_version }}-{{ site_id }}\g<suffix>'
         backrefs: true
 
     - name: Update site php binary symlink to {{ new_php_version }}

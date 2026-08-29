@@ -20,6 +20,11 @@ mysql_pressctlbot_password: ''
 # Changing this after provisioning requires re-running the php role
 php_version: "8.3"
 
+# PHP versions where OPcache is compiled into the PHP core and there is no
+# separate phpX.Y-opcache package (PHP 8.5+). Kept in sync with ondrej/php PPA.
+php_opcache_bundled_versions:
+  - "8.5"
+
 # Server timezone — must be a valid tz database name (e.g. "America/New_York", "Europe/London")
 # Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 server_timezone: "UTC"

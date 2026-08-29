@@ -65,3 +65,19 @@
   args:
     chdir: "{{ site_home }}/files"
   changed_when: false
+
+- name: Create mu-plugins directory
+  ansible.builtin.file:
+    path: "{{ site_home }}/files/wp-content/mu-plugins"
+    state: directory
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: '0755'
+
+- name: Copy must-use plugin
+  ansible.builtin.copy:
+    src: wordsail-sso.php
+    dest: "{{ site_home }}/files/wp-content/mu-plugins/wordsail-sso.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: '0644'

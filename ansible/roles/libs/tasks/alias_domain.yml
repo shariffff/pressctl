@@ -1,0 +1,165 @@
+---
+# Extra (customer) domains for an existing site. The site keeps its original
+# directory under /sites/<primary_domain>; each alias only adds an nginx
+# server block in that site's `after/` include dir, plus a Let's Encrypt cert.
+#
+# Operations (selected by `operation`, see playbooks/domain_management.yml):
+#   add_alias        HTTP-only server block (serves ACME challenges)
+#   issue_alias_ssl  DNS check, certbot, then re-render the block with HTTPS
+#   remove_alias     remove the server block and its certificate
+#   set_primary      switch WordPress's home/siteurl to `domain`
+#
+# Required: domain, site_id, primary_domain, php_version (not for remove_alias/set_primary)
+
+- name: Assert alias variables are defined
+  ansible.builtin.assert:
+    that:
+      - domain is defined and domain | length > 0
+      - primary_domain is defined and primary_domain | length > 0
+      - site_id is defined and site_id | length > 0
+      - operation in ['remove_alias', 'set_primary'] or (php_version is defined and php_version | length > 0)
+    fail_msg: "domain, primary_domain, site_id (and php_version) are required"
+  tags: [add_alias, issue_alias_ssl, remove_alias, set_primary]
+
+- name: Set alias config path
+  ansible.builtin.set_fact:
+    alias_conf: "/etc/nginx/sites-available/{{ primary_domain }}/after/alias-{{ domain }}.conf"
+  tags: [add_alias, issue_alias_ssl, remove_alias]
+
+- name: Render HTTP-only alias server block
+  ansible.builtin.template:
+    src: alias.conf.j2
+    dest: "{{ alias_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    alias_ssl: false
+  when: operation == 'add_alias'
+  tags: add_alias
+
+- name: Check DNS before issuing the certificate
+  ansible.builtin.include_tasks:
+    file: check_dns.yml
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
+- name: Fail if DNS doesn't point at this server
+  ansible.builtin.fail:
+    msg: |
+      DNS_MISMATCH: domain={{ domain }} resolved_ip={{ domain_resolved_ip }} server_ip={{ server_ip }}
+  when:
+    - operation == 'issue_alias_ssl'
+    - not dns_matches_server | bool
+  tags: issue_alias_ssl
+
+- name: Make sure the HTTP server block exists for the ACME challenge
+  ansible.builtin.template:
+    src: alias.conf.j2
+    dest: "{{ alias_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  vars:
+    alias_ssl: false
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
+- name: Reload nginx so the ACME challenge is served
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
+- name: Create certbot webroot
+  ansible.builtin.file:
+    path: /sites/.certbot
+    state: directory
+    mode: "0755"
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
+- name: Obtain the certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly --webroot --cert-name {{ domain }} --webroot-path /sites/.certbot
+      -d {{ domain }} --preferred-challenges http --noninteractive --agree-tos
+      --no-eff-email --register-unsafely-without-email
+    creates: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
+- name: Render HTTPS alias server block
+  ansible.builtin.template:
+    src: alias.conf.j2
+    dest: "{{ alias_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    alias_ssl: true
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
+- name: Remove alias server block
+  ansible.builtin.file:
+    path: "{{ alias_conf }}"
+    state: absent
+  when: operation == 'remove_alias'
+  tags: remove_alias
+
+- name: Remove alias certificate
+  ansible.builtin.command:
+    cmd: "certbot delete --cert-name {{ domain }} --noninteractive"
+    removes: "/etc/letsencrypt/live/{{ domain }}"
+  when: operation == 'remove_alias'
+  tags: remove_alias
+
+- name: Validate nginx configuration
+  ansible.builtin.command:
+    cmd: nginx -t
+  register: nginx_config_test
+  changed_when: false
+  when: operation in ['add_alias', 'issue_alias_ssl', 'remove_alias']
+  tags: [add_alias, issue_alias_ssl, remove_alias]
+
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: operation in ['add_alias', 'issue_alias_ssl', 'remove_alias']
+  tags: [add_alias, issue_alias_ssl, remove_alias]
+
+# Switch the WordPress address. `old_url` is what WordPress uses now.
+- name: Read current WordPress address
+  become_user: "{{ site_id }}"
+  ansible.builtin.command: wp option get home
+  args:
+    chdir: "/sites/{{ primary_domain }}/files"
+  register: current_home
+  changed_when: false
+  when: operation == 'set_primary'
+  tags: set_primary
+
+- name: Replace the old address everywhere
+  become_user: "{{ site_id }}"
+  ansible.builtin.command: >
+    wp search-replace '{{ current_home.stdout | trim }}' 'https://{{ domain }}'
+    --all-tables --skip-columns=guid
+  args:
+    chdir: "/sites/{{ primary_domain }}/files"
+  when:
+    - operation == 'set_primary'
+    - current_home.stdout | trim != 'https://' ~ domain
+  tags: set_primary
+
+- name: Make sure home and siteurl are the new address
+  become_user: "{{ site_id }}"
+  ansible.builtin.command: "wp option update {{ item }} 'https://{{ domain }}'"
+  args:
+    chdir: "/sites/{{ primary_domain }}/files"
+  loop: [home, siteurl]
+  when: operation == 'set_primary'
+  tags: set_primary

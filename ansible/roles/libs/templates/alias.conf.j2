@@ -1,0 +1,72 @@
+# {{ ansible_managed }}
+# Extra domain for the site that lives at /sites/{{ primary_domain }}.
+# Renders HTTP-only until a certificate exists (alias_ssl), then HTTPS.
+server {
+	listen 80;
+	listen [::]:80;
+	server_name {{ domain }};
+
+	location ^~ /.well-known/acme-challenge/ {
+		root /sites/.certbot;
+		auth_basic off;
+		allow all;
+	}
+
+	location / {
+{% if alias_ssl | default(false) | bool %}
+		return 301 https://$host$request_uri;
+{% else %}
+		return 503;
+{% endif %}
+	}
+}
+{% if alias_ssl | default(false) | bool %}
+
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+	http2 on;
+
+	server_name {{ domain }};
+
+	ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+	ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+
+	root /sites/{{ primary_domain }}/files/;
+
+	index index.html index.php;
+
+	access_log /sites/{{ primary_domain }}/logs/access.log;
+	error_log /sites/{{ primary_domain }}/logs/error.log;
+
+	add_header X-Frame-Options "SAMEORIGIN";
+	add_header X-Content-Type-Options "nosniff";
+	add_header X-Xss-Protection "1; mode=block";
+	add_header Referrer-Policy "strict-origin-when-cross-origin";
+
+	include sites-available/{{ primary_domain }}/server/*;
+
+	include global/basic-locations.conf;
+
+	location ~* /\.(?!well-known\/) {
+		deny all;
+	}
+
+	location ~ \.(ini|log|conf|blade.php)$ {
+		deny all;
+	}
+
+	location / {
+		try_files $uri $uri/ /index.php?$args;
+	}
+
+	location ~ \.php$ {
+		try_files $uri =404;
+
+		include fastcgi.conf;
+		fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
+
+		include sites-available/{{ primary_domain }}/location/*;
+	}
+}
+{% endif %}

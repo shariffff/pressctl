@@ -77,6 +77,21 @@
         line: '\g<prefix>{{ new_php_version }}-{{ site_id }}\g<suffix>'
         backrefs: true
 
+    - name: Find extra-domain server blocks
+      ansible.builtin.find:
+        paths: '/etc/nginx/sites-available/{{ site_domain }}/after'
+        patterns: 'alias-*.conf'
+      register: alias_confs
+
+    - name: Update extra-domain fastcgi_pass sockets to {{ new_php_version }}
+      ansible.builtin.replace:
+        path: '{{ item.path }}'
+        regexp: 'php{{ php_version }}-{{ site_id }}\.sock'
+        replace: 'php{{ new_php_version }}-{{ site_id }}.sock'
+      loop: '{{ alias_confs.files }}'
+      loop_control:
+        label: '{{ item.path }}'
+
     - name: Update site php binary symlink to {{ new_php_version }}
       ansible.builtin.file:
         src: '/usr/bin/php{{ new_php_version }}'

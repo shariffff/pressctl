@@ -82,10 +82,19 @@ Examples:
 		}
 
 		// Prepare extra vars for Ansible
+		alias, _ := cmd.Flags().GetBool("alias")
 		extraVars := map[string]interface{}{
 			"operation": "add_domain",
 			"domain":    input.Domain,
 			"site_id":   input.SiteID,
+		}
+		if alias {
+			vars, err := aliasVars(targetServer, input.SiteID, input.Domain, "add_alias")
+			if err != nil {
+				color.Red("Error: %v", err)
+				os.Exit(1)
+			}
+			extraVars = vars
 		}
 
 		// Create Ansible executor
@@ -129,6 +138,14 @@ Examples:
 			sslVars := map[string]interface{}{
 				"operation": "issue_ssl",
 				"domain":    input.Domain,
+			}
+			if alias {
+				vars, err := aliasVars(targetServer, input.SiteID, input.Domain, "issue_alias_ssl")
+				if err != nil {
+					color.Red("Error: %v", err)
+					os.Exit(1)
+				}
+				sslVars = vars
 			}
 
 			sslResult, err := executor.ExecutePlaybookWithResult("playbooks/domain_management.yml", *targetServer, sslVars, cfg.GlobalVars)
@@ -264,6 +281,14 @@ Examples:
 			"operation": "remove_domain",
 			"domain":    input.Domain,
 		}
+		if alias, _ := cmd.Flags().GetBool("alias"); alias {
+			vars, err := aliasVars(targetServer, input.SiteID, input.Domain, "remove_alias")
+			if err != nil {
+				color.Red("Error: %v", err)
+				os.Exit(1)
+			}
+			extraVars = vars
+		}
 
 		// Create Ansible executor
 		executor := ansible.NewExecutor(cfg.Ansible.Path)
@@ -353,6 +378,14 @@ Examples:
 			"operation": "issue_ssl",
 			"domain":    input.Domain,
 		}
+		if alias, _ := cmd.Flags().GetBool("alias"); alias {
+			vars, err := aliasVars(targetServer, input.SiteID, input.Domain, "issue_alias_ssl")
+			if err != nil {
+				color.Red("Error: %v", err)
+				os.Exit(1)
+			}
+			extraVars = vars
+		}
 
 		// Create Ansible executor
 		executor := ansible.NewExecutor(cfg.Ansible.Path)
@@ -425,11 +458,91 @@ func primaryDomainForSite(server *models.Server, siteID string) string {
 	return ""
 }
 
+// aliasVars builds the Ansible vars for managing an extra domain of a site.
+// The site keeps living under /sites/<PrimaryDomain>; the alias only adds an
+// nginx server block and a certificate.
+func aliasVars(server *models.Server, siteID, domain, operation string) (map[string]interface{}, error) {
+	for i := range server.Sites {
+		site := server.Sites[i]
+		if site.SiteID != siteID {
+			continue
+		}
+		return map[string]interface{}{
+			"operation":      operation,
+			"domain":         domain,
+			"site_id":        site.SiteID,
+			"primary_domain": site.PrimaryDomain,
+			"php_version":    site.PHPVersion,
+		}, nil
+	}
+	return nil, fmt.Errorf("site '%s' not found on server '%s'", siteID, server.Name)
+}
+
+// domainPrimaryCmd makes a domain the address WordPress uses.
+var domainPrimaryCmd = &cobra.Command{
+	Use:   "primary",
+	Short: "Make a domain the site's primary address",
+	Long: `Switch WordPress's home/siteurl (and every stored URL) to the given domain.
+The domain must already be added to the site.
+
+Example:
+  press domain primary --server myserver --site mysite --domain www.example.com`,
+	Run: func(cmd *cobra.Command, args []string) {
+		mgr, cfg := ensureConfig()
+
+		serverName, _ := cmd.Flags().GetString("server")
+		siteName, _ := cmd.Flags().GetString("site")
+		domain, _ := cmd.Flags().GetString("domain")
+		if serverName == "" || siteName == "" || domain == "" {
+			outputError(cmd, "Incomplete flags", fmt.Errorf("--server, --site, and --domain are required"))
+			os.Exit(1)
+		}
+
+		var targetServer *models.Server
+		for i := range cfg.Servers {
+			if cfg.Servers[i].Name == serverName {
+				targetServer = &cfg.Servers[i]
+				break
+			}
+		}
+		if targetServer == nil {
+			color.Red("Error: Server '%s' not found", serverName)
+			os.Exit(1)
+		}
+
+		vars, err := aliasVars(targetServer, siteName, domain, "set_primary")
+		if err != nil {
+			color.Red("Error: %v", err)
+			os.Exit(1)
+		}
+
+		executor := ansible.NewExecutor(cfg.Ansible.Path)
+		executor.SetVerbose(Verbose)
+		executor.SetDryRun(DryRun)
+
+		if err := executor.ExecutePlaybook("playbooks/domain_management.yml", *targetServer, vars, cfg.GlobalVars); err != nil {
+			color.Red("\n✗ Switching the primary domain failed: %v", err)
+			os.Exit(1)
+		}
+
+		if err := state.NewManager(mgr).SetSitePublicDomain(serverName, siteName, domain); err != nil {
+			color.Red("Warning: Failed to update configuration: %v", err)
+		}
+
+		color.Green("\n✓ '%s' is now the primary domain", domain)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(domainCmd)
 	domainCmd.AddCommand(domainAddCmd)
 	domainCmd.AddCommand(domainRemoveCmd)
 	domainCmd.AddCommand(domainSSLCmd)
+	domainCmd.AddCommand(domainPrimaryCmd)
+
+	domainPrimaryCmd.Flags().String("server", "", "Server name")
+	domainPrimaryCmd.Flags().String("site", "", "Site ID")
+	domainPrimaryCmd.Flags().String("domain", "", "Domain to make primary")
 
 	// domain add flags (non-interactive mode)
 	domainAddCmd.Flags().String("server", "", "Server name")
@@ -437,6 +550,7 @@ func init() {
 	domainAddCmd.Flags().String("domain", "", "Domain to add")
 	domainAddCmd.Flags().Bool("ssl", false, "Issue SSL certificate for the domain")
 	domainAddCmd.Flags().Bool("json", false, "Output in JSON format")
+	domainAddCmd.Flags().Bool("alias", false, "The domain is an extra domain of an existing site (served from the site's own directory)")
 
 	// domain remove flags
 	domainRemoveCmd.Flags().String("server", "", "Server name")
@@ -444,10 +558,12 @@ func init() {
 	domainRemoveCmd.Flags().String("domain", "", "Domain to remove")
 	domainRemoveCmd.Flags().BoolP("force", "f", false, "Force removal without confirmation")
 	domainRemoveCmd.Flags().Bool("json", false, "Output in JSON format")
+	domainRemoveCmd.Flags().Bool("alias", false, "The domain is an extra domain of an existing site (served from the site's own directory)")
 
 	// domain ssl flags (non-interactive mode)
 	domainSSLCmd.Flags().String("server", "", "Server name")
 	domainSSLCmd.Flags().String("site", "", "Site ID")
 	domainSSLCmd.Flags().String("domain", "", "Domain to issue SSL for")
 	domainSSLCmd.Flags().Bool("json", false, "Output in JSON format")
+	domainSSLCmd.Flags().Bool("alias", false, "The domain is an extra domain of an existing site (served from the site's own directory)")
 }

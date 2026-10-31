@@ -337,3 +337,30 @@ func (m *Manager) UpdateDomainSSL(serverName string, siteID string, domainName s
 
 	return nil
 }
+
+// SetSitePublicDomain records which domain WordPress uses as its address.
+func (m *Manager) SetSitePublicDomain(serverName string, siteID string, domain string) error {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	found := false
+	for i := range cfg.Servers {
+		if cfg.Servers[i].Name != serverName {
+			continue
+		}
+		for j := range cfg.Servers[i].Sites {
+			if cfg.Servers[i].Sites[j].SiteID == siteID {
+				cfg.Servers[i].Sites[j].PublicDomain = domain
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("site '%s' not found on server '%s'", siteID, serverName)
+	}
+
+	return m.configManager.Save(cfg)
+}

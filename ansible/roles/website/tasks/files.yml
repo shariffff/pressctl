@@ -1,27 +1,29 @@
 ---
+# Tenant isolation: the site home is private to its own user. nginx (www-data)
+# only gets traverse access, so it can serve files but other sites' users and
+# PHP processes cannot list or read this site (wp-config.php holds DB creds).
 - name: Ensure site directories exist
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
-    mode: "0755"
+    mode: "{{ item.mode }}"
   loop:
-    - "{{ site_home }}"
-    - "{{ site_home }}/files"
-    - "{{ site_home }}/logs"
-    - "{{ site_home }}/.local/bin"
-    - "{{ site_home }}/.ssh"
-    - "{{ site_home }}/.wp-cli"
+    - { path: "{{ site_home }}", mode: "0750" }
+    - { path: "{{ site_home }}/files", mode: "0755" }
+    - { path: "{{ site_home }}/logs", mode: "0755" }
+    - { path: "{{ site_home }}/.local/bin", mode: "0755" }
+    - { path: "{{ site_home }}/.ssh", mode: "0700" }
+    - { path: "{{ site_home }}/.wp-cli", mode: "0755" }
 
-- name: Set ACL for site directory
-  acl:
+- name: Let the web server traverse the site directory
+  ansible.posix.acl:
     path: "{{ site_home }}"
-    entity: "{{ site_group }}"
-    etype: group
-    permissions: "---"
+    entity: www-data
+    etype: user
+    permissions: x
     state: present
-    follow: true
 
 - name: Symlink PHP binary
   ansible.builtin.file:

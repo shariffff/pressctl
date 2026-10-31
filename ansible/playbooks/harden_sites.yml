@@ -1,0 +1,70 @@
+---
+# Isolate the sites on an existing server from each other.
+#
+# Older servers were built with world-readable site homes (0755) and
+# wp-config.php (0664), so any site's user, or PHP code running in any site,
+# could read every other site's database password. This applies the same
+# permissions the website role now sets on new sites. Safe to re-run.
+#
+#   ansible-playbook playbooks/harden_sites.yml -i "IP," -u root [--check --diff]
+- name: Isolate sites from each other
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Make /sites traverse-only
+      ansible.builtin.file:
+        path: /sites
+        state: directory
+        mode: "0711"
+
+    - name: Find site directories
+      ansible.builtin.find:
+        paths: /sites
+        file_type: directory
+        depth: 1
+        hidden: false
+      register: site_dirs
+
+    - name: Make each site home private to its owner
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "0750"
+      loop: "{{ site_dirs.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Let the web server traverse each site home
+      ansible.posix.acl:
+        path: "{{ item.path }}"
+        entity: www-data
+        etype: user
+        permissions: x
+        state: present
+      loop: "{{ site_dirs.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Make wp-config.php private to its owner
+      ansible.builtin.file:
+        path: "{{ item.path }}/files/wp-config.php"
+        mode: "0640"
+      loop: "{{ site_dirs.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      failed_when: false
+
+    - name: Check for the shared origin certificate key
+      ansible.builtin.stat:
+        path: /etc/cloudflare/certs/sailurl.key
+      register: origin_key
+
+    - name: Make the origin certificate key root-only (nginx reads it as root)
+      ansible.builtin.file:
+        path: /etc/cloudflare/certs/sailurl.key
+        owner: root
+        group: root
+        mode: "0600"
+      when: origin_key.stat.exists

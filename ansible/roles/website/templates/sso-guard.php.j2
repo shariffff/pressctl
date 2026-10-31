@@ -2,8 +2,9 @@
 /**
  * WordSail site-tool SSO guard.
  *
- * Standalone counterpart to wordsail-sso.php for tools that are not
- * WordPress (Tiny File Manager, Adminer). Verifies a single-use panel
+ * Standalone SSO gate for tools that are not WordPress (Tiny File Manager,
+ * Adminer). wp-admin SSO is handled by the wordsail-connector plugin.
+ * Verifies a single-use panel
  * token against the control panel, then issues a short-lived cookie that
  * gates access to the tool.
  *
@@ -28,7 +29,7 @@ if (!defined('ABSPATH') && basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sso-guar
     exit;
 }
 
-const WORDSAIL_TOOL_SSO_SERVER = '{{ wordsail_sso_server | default("app.wordsail.com") }}';
+const WORDSAIL_TOOL_SSO_SERVER = '{{ wordsail_sso_server | default("managed.wordsail.com") }}';
 const WORDSAIL_TOOL_SSO_ENDPOINT = '/api/hosting/v1/wp-sso/';
 const WORDSAIL_TOOL_SSO_COOKIE_TTL = 3600;      // 1 hour, rolling
 const WORDSAIL_TOOL_SSO_COOKIE_PREFIX = 'wordsail_sso_';

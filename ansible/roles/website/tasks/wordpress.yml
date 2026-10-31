@@ -43,6 +43,26 @@
     chdir: "{{ site_home }}/files"
   when: wp_installed.rc != 0
 
+- name: Check if WordSail connector plugin is installed
+  become_user: "{{ site_user }}"
+  ansible.builtin.command: wp plugin is-installed wordsail-connector
+  args:
+    chdir: "{{ site_home }}/files"
+  register: wordsail_connector_installed
+  failed_when: false
+  changed_when: false
+  when: wordsail_connector_enabled | bool
+
+- name: Install and activate WordSail connector plugin
+  become_user: "{{ site_user }}"
+  ansible.builtin.command: >
+    wp plugin install '{{ wordsail_connector_url }}' --activate
+  args:
+    chdir: "{{ site_home }}/files"
+  when:
+    - wordsail_connector_enabled | bool
+    - wordsail_connector_installed.rc != 0
+
 - name: Get current permalink structure
   become_user: "{{ site_user }}"
   ansible.builtin.command: wp option get permalink_structure
@@ -65,19 +85,3 @@
   args:
     chdir: "{{ site_home }}/files"
   changed_when: false
-
-- name: Create mu-plugins directory
-  ansible.builtin.file:
-    path: "{{ site_home }}/files/wp-content/mu-plugins"
-    state: directory
-    owner: "{{ site_user }}"
-    group: "{{ site_group }}"
-    mode: '0755'
-
-- name: Copy must-use plugin
-  ansible.builtin.copy:
-    src: wordsail-sso.php
-    dest: "{{ site_home }}/files/wp-content/mu-plugins/wordsail-sso.php"
-    owner: "{{ site_user }}"
-    group: "{{ site_group }}"
-    mode: '0644'

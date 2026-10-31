@@ -17,6 +17,11 @@ wp_debug: false
 wp_debug_log: false
 wp_debug_display: false
 
+# WordSail connector plugin (installed and activated after WordPress install)
+# Set false to skip
+wordsail_connector_enabled: true
+wordsail_connector_url: "https://managed.wordsail.com/api/connector/v1/plugin/download/wordsail-connector-latest.zip"
+
 # Cron Configuration
 # Use WordPress built-in cron (false) or system cron (true)
 wp_disable_cron: true
@@ -34,7 +39,7 @@ site_tools_enabled: true
 filemanager_root: "{{ site_home }}/tools/files"
 
 # Panel SSO authority
-wordsail_sso_server: "app.wordsail.com"
+wordsail_sso_server: "managed.wordsail.com"
 
 # Pinned tool downloads
 tinyfilemanager_url: "https://raw.githubusercontent.com/prasathmani/tinyfilemanager/2.6/tinyfilemanager.php"

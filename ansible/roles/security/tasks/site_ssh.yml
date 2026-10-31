@@ -1,0 +1,42 @@
+---
+# Lets site owners sign in over SSH/SFTP as their site user (see the
+# 10-site-users.conf.j2 template). Included by main.yml and by
+# playbooks/ssh_baseline.yml for servers that already exist.
+- name: Create the site-users group
+  ansible.builtin.group:
+    name: site-users
+    state: present
+
+- name: Allow password sign-in for site users only
+  ansible.builtin.template:
+    src: 10-site-users.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-site-users.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart ssh
+
+- name: Check the sshd configuration before it is reloaded
+  ansible.builtin.command: sshd -t
+  changed_when: false
+
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+
+- name: Tighten the fail2ban sshd jail
+  ansible.builtin.template:
+    src: pressctl-sshd.local.j2
+    dest: /etc/fail2ban/jail.d/pressctl-sshd.local
+    owner: root
+    group: root
+    mode: "0644"
+  register: sshd_jail
+
+- name: Restart fail2ban when the jail changed
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted
+    enabled: true
+  when: sshd_jail.changed

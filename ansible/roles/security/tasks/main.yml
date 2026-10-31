@@ -35,3 +35,6 @@
     dest: /etc/ssh/sshd_config.d/00-pressctl.conf
     mode: '0644'
   notify: restart ssh
+
+- name: Allow site owners to sign in over SSH/SFTP
+  ansible.builtin.import_tasks: site_ssh.yml

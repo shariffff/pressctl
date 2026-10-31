@@ -4,14 +4,14 @@
  *
  * TFM auto-includes config.php from its own directory when present. We use
  * it to disable TFM's built-in auth (SSO is the only gate) and to point the
- * file manager at a dedicated root directory that is separate from the
- * WordPress install.
+ * file manager at the site's WordPress files. The tool code itself lives in
+ * ../tools, outside this root.
  */
 
 // SSO gates access, so disable TFM's own username/password login.
 $use_auth = false;
 
-// Dedicated managed root for this site; never the web root or wp-content.
+// The site's WordPress files (web root), so customers can manage wp-content.
 $root_path = '{{ filemanager_root }}';
 
 // Friendly browser title.

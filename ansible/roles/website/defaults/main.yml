@@ -36,7 +36,7 @@ site_file_permissions: "0644"
 site_tools_enabled: true
 
 # Root directory that Tiny File Manager manages (separate from WordPress uploads)
-filemanager_root: "{{ site_home }}/tools/files"
+filemanager_root: "{{ site_home }}/files"
 
 # Panel SSO authority
 wordsail_sso_server: "managed.wordsail.com"

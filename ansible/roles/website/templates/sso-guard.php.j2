@@ -190,7 +190,7 @@ function wordsail_tool_sso_secret(): string
     if ($secret === null) {
         $file = __DIR__ . '/.sso-secret';
         $value = is_readable($file) ? trim((string) @file_get_contents($file)) : '';
-        if ($value === '' || preg_match('/^[a-f0-9]{64}$/', $value) !== 1) {
+        if ($value === '' || preg_match('/^[a-f0-9]{64}$/i', $value) !== 1) {
             $secret = false;
         } else {
             $secret = $value;

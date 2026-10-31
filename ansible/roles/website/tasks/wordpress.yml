@@ -20,6 +20,13 @@
     chdir: "{{ site_home }}/files"
     creates: "{{ site_home }}/files/wp-config.php"
 
+- name: Keep wp-config.php private to the site user
+  ansible.builtin.file:
+    path: "{{ site_home }}/files/wp-config.php"
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0640"
+
 - name: Check if WordPress is installed
   become_user: "{{ site_user }}"
   ansible.builtin.command: wp core is-installed

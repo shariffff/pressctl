@@ -133,3 +133,34 @@
   ansible.builtin.systemd:
     daemon_reload: true
   when: not ansible_check_mode
+
+# ── Site users must not reach the local Redis / MariaDB over TCP ──
+# A login shares the host's network, so 127.0.0.1:6379 (Redis, no password,
+# used only by the server's own tools) and 127.0.0.1:3306 were open to every
+# site user and to PHP. WordPress reaches MariaDB through its unix socket, so
+# nothing legitimate loses access. Site users are uid >= 1001 (1000 is the
+# ansible user). The rule goes before ufw's "accept everything on lo" line.
+- name: Block site users from local Redis and MariaDB over TCP (IPv4)
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/before.rules
+    marker: "# {mark} pressctl: keep site users off local redis/mariadb"
+    insertbefore: '^-A ufw-before-output -o lo -j ACCEPT'
+    block: |
+      -A ufw-before-output -o lo -p tcp -m multiport --dports 6379,3306 -m owner --uid-owner 1001-59999 -j REJECT --reject-with tcp-reset
+    validate: "iptables-restore --test --noflush %s"
+  register: ufw_v4_rule
+
+- name: Block site users from local Redis and MariaDB over TCP (IPv6)
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/before6.rules
+    marker: "# {mark} pressctl: keep site users off local redis/mariadb"
+    insertbefore: '^-A ufw6-before-output -o lo -j ACCEPT'
+    block: |
+      -A ufw6-before-output -o lo -p tcp -m multiport --dports 6379,3306 -m owner --uid-owner 1001-59999 -j REJECT --reject-with tcp-reset
+    validate: "ip6tables-restore --test --noflush %s"
+  register: ufw_v6_rule
+
+- name: Load the new firewall rules
+  ansible.builtin.command: ufw reload
+  when: (ufw_v4_rule.changed or ufw_v6_rule.changed) and not ansible_check_mode
+  changed_when: true

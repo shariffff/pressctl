@@ -4,7 +4,8 @@
 # always one we generate, and fail2ban watches the sshd log. Forwarding is off
 # so a login cannot be used to reach the server's local services. Their shell is
 # the sandbox in /usr/local/bin/pressctl-shell, so ~/.ssh/rc (which sshd would run
-# outside the sandbox) and ~/.ssh/environment are switched off.
+# outside the sandbox) is switched off. (PermitUserEnvironment is already "no" by default
+# and can't be set inside a Match block.)
 Match Group site-users
     PasswordAuthentication yes
     AllowTcpForwarding no
@@ -13,4 +14,3 @@ Match Group site-users
     PermitTunnel no
     GatewayPorts no
     PermitUserRC no
-    PermitUserEnvironment no

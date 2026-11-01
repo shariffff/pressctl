@@ -1,0 +1,67 @@
+#!/bin/bash
+# Login shell for site owners (installed by the pressctl security role).
+#
+# sshd starts this for every SSH, SFTP, scp and rsync session of a site user.
+# It puts the session in a bubblewrap sandbox that can see the system programs
+# (read-only), a private /tmp, and ONLY the site's own directory. Nothing else on the
+# server is visible: no /etc/nginx, no other sites, no /root, no other processes.
+#
+# Interactive logins get a login bash; commands (`-c ...`, which is how sshd
+# runs sftp-server, scp and rsync) are passed to bash unchanged.
+set -u
+
+user=$(id -un)
+home=$(getent passwd "$user" | cut -d: -f6)
+group=$(id -gn)
+
+if [ -z "$home" ] || [ ! -d "$home" ] || [ ! -x /usr/bin/bwrap ]; then
+    echo "This account isn't ready for sign-in yet. Please contact support." >&2
+    exit 1
+fi
+
+args=(
+    --unshare-user --disable-userns
+    --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup-try
+    --die-with-parent --cap-drop ALL
+    --hostname site
+
+    # Programs and libraries, read-only (usr-merged layout).
+    --ro-bind /usr /usr
+    --symlink usr/bin /bin --symlink usr/sbin /sbin
+    --symlink usr/lib /lib --symlink usr/lib64 /lib64
+
+    --proc /proc --dev /dev
+    --tmpfs /tmp --tmpfs /var/tmp
+
+    # A minimal /etc: only what ordinary tools need to run and reach the network.
+    --ro-bind-data 8 /etc/passwd
+    --ro-bind-data 9 /etc/group
+)
+for f in ld.so.cache ld.so.conf ld.so.conf.d alternatives resolv.conf hosts nsswitch.conf \
+         localtime timezone ssl ca-certificates ca-certificates.conf php terminfo \
+         profile profile.d bash.bashrc inputrc environment vim gitconfig mime.types; do
+    [ -e "/etc/$f" ] && args+=(--ro-bind "/etc/$f" "/etc/$f")
+done
+
+# The database socket, so wp-cli and the mysql client can reach MariaDB.
+[ -S /run/mysqld/mysqld.sock ] && args+=(--ro-bind /run/mysqld /run/mysqld)
+
+args+=(
+    --bind "$home" "$home"
+    --chdir "$home"
+    --clearenv
+    --setenv HOME "$home" --setenv USER "$user" --setenv LOGNAME "$user"
+    --setenv SHELL /bin/bash
+    --setenv PATH "$home/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    --setenv TERM "${TERM:-xterm}" --setenv LANG "${LANG:-C.UTF-8}"
+)
+
+if [ $# -eq 0 ]; then
+    set -- /bin/bash -l
+else
+    set -- /bin/bash "$@"
+fi
+
+exec /usr/bin/bwrap "${args[@]}" "$@" \
+    8< <(getent passwd root nobody "$user") \
+    9< <(getent group root nogroup "$group")

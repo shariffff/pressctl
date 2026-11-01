@@ -9,6 +9,6 @@
     name: "{{ site_user }}"
     group: "{{ site_group }}"
     home: "{{ site_home }}"
-    shell: /bin/bash
+    shell: /usr/local/bin/pressctl-shell
     create_home: true
     state: present

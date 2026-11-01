@@ -40,3 +40,71 @@
     state: restarted
     enabled: true
   when: sshd_jail.changed
+
+# ── The sandbox every site login runs in ──
+# A site user's shell is /usr/local/bin/pressctl-shell: a bubblewrap sandbox that shows
+# only the site's own directory. Without it a login could read /etc/nginx,
+# other tenants' domains, the process list and so on.
+- name: Install bubblewrap
+  ansible.builtin.apt:
+    name: bubblewrap
+    state: present
+
+- name: Install the site login shell
+  ansible.builtin.copy:
+    src: pressctl-shell
+    dest: /usr/local/bin/pressctl-shell
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check whether AppArmor restricts user namespaces here
+  ansible.builtin.stat:
+    path: /etc/apparmor.d/abi/4.0
+  register: apparmor_abi4
+
+- name: Let bubblewrap create user namespaces (Ubuntu 24.04 and later)
+  ansible.builtin.copy:
+    src: pressctl-bwrap.apparmor
+    dest: /etc/apparmor.d/pressctl-bwrap
+    owner: root
+    group: root
+    mode: "0644"
+  register: bwrap_profile
+  when: apparmor_abi4.stat.exists
+
+- name: Load the bubblewrap AppArmor profile
+  ansible.builtin.command: apparmor_parser -r /etc/apparmor.d/pressctl-bwrap
+  when: apparmor_abi4.stat.exists and bwrap_profile.changed
+
+- name: Limit processes and sessions for site logins
+  ansible.builtin.template:
+    src: 50-pressctl-sites.conf.j2
+    dest: /etc/security/limits.d/50-pressctl-sites.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Check that an unprivileged user can start the sandbox
+  ansible.builtin.command: >-
+    runuser -u nobody -- /usr/bin/bwrap --unshare-user --disable-userns --ro-bind /usr /usr
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /bin/true
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Find the existing sites
+  ansible.builtin.find:
+    paths: /sites
+    file_type: directory
+    depth: 1
+    hidden: false
+  register: sandbox_site_dirs
+
+- name: Put every existing site login in the sandbox
+  ansible.builtin.user:
+    name: "{{ item.pw_name }}"
+    shell: /usr/local/bin/pressctl-shell
+  loop: "{{ sandbox_site_dirs.files }}"
+  loop_control:
+    label: "{{ item.pw_name }}"
+  when: item.pw_name != 'root'

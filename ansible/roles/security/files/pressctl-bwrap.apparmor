@@ -1,0 +1,9 @@
+# Ubuntu 24.04 stops unprivileged programs from creating user namespaces.
+# bubblewrap needs one to build a site's sandbox (see /usr/local/bin/pressctl-shell),
+# so this lets that one program do it.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile pressctl-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}

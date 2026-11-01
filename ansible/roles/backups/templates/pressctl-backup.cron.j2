@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+# Nightly backup of every site, and weekly Kopia maintenance (one run at a time).
+{{ backup_minute }} {{ backup_hour }} * * * root flock -n /run/pressctl-backup.lock /usr/local/sbin/pressctl-backup run-scheduled >> /var/log/pressctl-backup.log 2>&1
+15 5 * * 0 root flock -n /run/pressctl-backup.lock /usr/local/sbin/pressctl-backup maintenance >> /var/log/pressctl-backup.log 2>&1

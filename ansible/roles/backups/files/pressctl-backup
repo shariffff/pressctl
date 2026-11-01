@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""pressctl-backup: per-site backups with Kopia. Runs as root on a hosting server.
+
+Every backup of a site is a "set": a Kopia snapshot of the site's WordPress
+files and one of its database dump, sharing a `set` tag (a UTC timestamp).
+Kopia deduplicates across all sites in the repository, so the many identical
+WordPress cores and plugins cost almost nothing.
+
+  setup                                  connect (or create) the repository and set the policies
+  create   --site S [--context C] [--comment T]
+  list     --site S                      JSON, newest first
+  restore  --site S --set TS             takes a "Pre-restore" backup first
+  comment  --site S --set TS --text T
+  run-scheduled                          back up every site (nightly cron)
+  maintenance                            Kopia repository maintenance (weekly cron)
+"""
+import argparse
+import datetime
+import fcntl
+import json
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+
+ENV_FILE = '/etc/pressctl/kopia.env'
+STATE = '/var/backups/pressctl'
+SITE_RE = re.compile(r'^[a-z][a-z0-9]{0,31}$')
+SET_RE = re.compile(r'^\d{8}T\d{6}Z$')
+CONTEXTS = ('Manual', 'Scheduled', 'Pre-restore')
+# Things WordPress plugins regenerate or that are backups themselves.
+IGNORE = ['/wp-content/cache', '/wp-content/upgrade', '/wp-content/updraft', '/wp-content/ai1wm-backups',
+          '/wp-content/backups', '/wp-content/backup-db', '/wp-content/wflogs', '/wp-content/debug.log']
+
+
+class Fail(Exception):
+    def __init__(self, message, code=1):
+        super().__init__(message)
+        self.code = code
+
+
+def load_env():
+    try:
+        with open(ENV_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, _, value = line.partition('=')
+                    os.environ.setdefault(key.strip(), value.strip())
+    except FileNotFoundError:
+        raise Fail('Backups are not set up on this server ({} is missing)'.format(ENV_FILE), 2)
+    os.environ['KOPIA_CHECK_FOR_UPDATES'] = 'false'
+
+
+def run(cmd, **kw):
+    kw.setdefault('capture_output', True)
+    kw.setdefault('text', True)
+    return subprocess.run(cmd, **kw)
+
+
+def kopia(*args, check=True):
+    result = run(['nice', '-n', '10', 'ionice', '-c3', 'kopia', *args])
+    if check and result.returncode != 0:
+        raise Fail('kopia {} failed: {}'.format(args[0], (result.stderr or result.stdout).strip()[-600:]), 3)
+    return result
+
+
+def check_site(site):
+    if not SITE_RE.match(site or ''):
+        raise Fail('Invalid site id', 64)
+    try:
+        info = pwd.getpwnam(site)
+    except KeyError:
+        raise Fail('Unknown site {}'.format(site), 64)
+    files = os.path.join(info.pw_dir, 'files')
+    if not os.path.isdir(files):
+        raise Fail('Site {} has no files directory'.format(site), 64)
+    return info.pw_dir, files
+
+
+def site_state(site):
+    path = os.path.join(STATE, site)
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    return path
+
+
+class SiteLock:
+    """One backup or restore per site at a time."""
+    def __init__(self, name):
+        os.makedirs(STATE, mode=0o700, exist_ok=True)
+        self.path = os.path.join(STATE, '.lock-' + name)
+
+    def __enter__(self):
+        self.f = open(self.path, 'w')
+        try:
+            fcntl.flock(self.f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Fail('A backup or restore is already running for this site', 75)
+        return self
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
+def db_name(files, site):
+    try:
+        with open(os.path.join(files, 'wp-config.php'), errors='replace') as f:
+            m = re.search(r"define\(\s*['\"]DB_NAME['\"]\s*,\s*['\"]([^'\"]+)['\"]", f.read())
+        if m and re.match(r'^[A-Za-z0-9_]+$', m.group(1)):
+            return m.group(1)
+    except OSError:
+        pass
+    return site
+
+
+def wp_version(files):
+    try:
+        with open(os.path.join(files, 'wp-includes', 'version.php'), errors='replace') as f:
+            m = re.search(r"\$wp_version\s*=\s*'([0-9][0-9A-Za-z.\-]*)'", f.read())
+        return m.group(1) if m else ''
+    except OSError:
+        return ''
+
+
+def dump_tool():
+    return shutil.which('mariadb-dump') or shutil.which('mysqldump') or 'mysqldump'
+
+
+def sql_tool():
+    return shutil.which('mariadb') or shutil.which('mysql') or 'mysql'
+
+
+def utc_stamp():
+    return datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+
+
+# ── comments (Kopia snapshots are immutable, so notes live beside them) ──
+
+def comments_path(site):
+    return os.path.join(site_state(site), 'comments.json')
+
+
+def read_comments(site):
+    try:
+        with open(comments_path(site)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def write_comments(site, data):
+    tmp = comments_path(site) + '.new'
+    with open(tmp, 'w') as f:
+        json.dump(data, f)
+    os.replace(tmp, comments_path(site))
+
+
+# ── snapshots ──
+
+def snapshots(site):
+    """All snapshots tagged with this site, as dicts."""
+    out = kopia('snapshot', 'list', '--all', '--show-identical', '--json', '--tags', 'site:' + site).stdout
+    try:
+        manifests = json.loads(out or '[]')
+    except ValueError:
+        raise Fail('Could not read the snapshot list', 3)
+    found = []
+    for m in manifests:
+        tags = {k.replace('tag:', '', 1): v for k, v in (m.get('tags') or {}).items()}
+        if tags.get('site') != site or not tags.get('set'):
+            continue
+        found.append({
+            'id': m.get('id'),
+            'set': tags['set'],
+            'kind': tags.get('kind'),
+            'context': tags.get('context', 'Manual'),
+            'wp': tags.get('wp', ''),
+            'start': m.get('startTime'),
+            'size': (m.get('stats') or {}).get('totalSize') or (m.get('rootEntry') or {}).get('summ', {}).get('size') or 0,
+        })
+    return found
+
+
+def backup_sets(site):
+    by_set = {}
+    for s in snapshots(site):
+        by_set.setdefault(s['set'], {})[s['kind']] = s
+    sets = []
+    for stamp, parts in by_set.items():
+        if 'files' in parts and 'db' in parts:   # a half-finished backup is not offered
+            sets.append({
+                'set': stamp, 'files': parts['files'], 'db': parts['db'],
+                'context': parts['files']['context'], 'wp': parts['files']['wp'],
+                'start': parts['files']['start'],
+                'size': int(parts['files']['size'] or 0) + int(parts['db']['size'] or 0),
+            })
+    sets.sort(key=lambda s: s['set'], reverse=True)
+    return sets
+
+
+# ── commands ──
+
+def cmd_setup(args):
+    load_env()
+    for name in ('KOPIA_PASSWORD', 'KOPIA_S3_BUCKET', 'KOPIA_S3_ENDPOINT', 'KOPIA_S3_ACCESS_KEY', 'KOPIA_S3_SECRET_KEY',
+                 'KOPIA_S3_PREFIX'):
+        if not os.environ.get(name):
+            raise Fail('{} is missing from {}'.format(name, ENV_FILE), 2)
+    storage = ['s3', '--bucket', os.environ['KOPIA_S3_BUCKET'], '--endpoint', os.environ['KOPIA_S3_ENDPOINT'],
+               '--access-key', os.environ['KOPIA_S3_ACCESS_KEY'], '--secret-access-key', os.environ['KOPIA_S3_SECRET_KEY'],
+               '--prefix', os.environ['KOPIA_S3_PREFIX']]
+    if os.environ.get('KOPIA_S3_REGION'):
+        storage += ['--region', os.environ['KOPIA_S3_REGION']]
+    cache = ['--content-cache-size-mb', '400', '--metadata-cache-size-mb', '200']
+    if run(['kopia', 'repository', 'status']).returncode != 0:
+        connected = run(['kopia', 'repository', 'connect', *storage, *cache])
+        if connected.returncode != 0:
+            created = run(['kopia', 'repository', 'create', *storage, *cache])
+            if created.returncode != 0:
+                raise Fail('Could not connect to or create the repository: {}'.format(
+                    (created.stderr or connected.stderr).strip()[-500:]), 3)
+            print('created the repository')
+    policy = ['policy', 'set', '--global', '--compression=zstd', '--keep-latest=10', '--keep-hourly=0',
+              '--keep-daily=14', '--keep-weekly=4', '--keep-monthly=2', '--keep-annual=0']
+    for pattern in IGNORE:
+        policy.append('--add-ignore=' + pattern)
+    # Re-running must not stack duplicates of the ignore rules.
+    current = kopia('policy', 'show', '--global', '--json').stdout
+    if all(pattern in current for pattern in IGNORE):
+        policy = [p for p in policy if not p.startswith('--add-ignore=')]
+    kopia(*policy)
+    print('repository ready')
+
+
+def create_set(site, context, comment):
+    home, files = check_site(site)
+    with SiteLock(site):
+        stamp = utc_stamp()
+        state = site_state(site)
+        dump = os.path.join(state, 'db.sql')
+        try:
+            with open(dump, 'wb') as out:
+                os.fchmod(out.fileno(), 0o600)
+                result = subprocess.run([dump_tool(), '--single-transaction', '--quick', '--no-tablespaces',
+                                         '--default-character-set=utf8mb4', db_name(files, site)],
+                                        stdout=out, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                raise Fail('Database dump failed: {}'.format(result.stderr.decode(errors='replace').strip()[-400:]), 3)
+            tags = ['--tags', 'site:' + site, '--tags', 'set:' + stamp, '--tags', 'context:' + context]
+            wp = wp_version(files)
+            files_tags = tags + ['--tags', 'kind:files'] + (['--tags', 'wp:' + wp] if wp else [])
+            kopia('snapshot', 'create', files, *files_tags, '--description', 'files {}'.format(stamp))
+            kopia('snapshot', 'create', dump, *tags, '--tags', 'kind:db', '--description', 'database {}'.format(stamp))
+        finally:
+            if os.path.exists(dump):
+                os.unlink(dump)   # the plain-text dump never stays on disk
+        if comment:
+            data = read_comments(site)
+            data[stamp] = comment[:255]
+            write_comments(site, data)
+        return stamp
+
+
+def cmd_create(args):
+    load_env()
+    if args.context not in CONTEXTS:
+        raise Fail('Invalid context', 64)
+    stamp = create_set(args.site, args.context, args.comment or '')
+    print(json.dumps({'set': stamp}))
+
+
+def cmd_list(args):
+    load_env()
+    check_site(args.site)
+    comments = read_comments(args.site)
+    items = []
+    for s in backup_sets(args.site):
+        items.append({
+            'set': s['set'], 'created': s['start'], 'context': s['context'], 'wp_version': s['wp'],
+            'size': s['size'], 'comment': comments.get(s['set'], ''),
+        })
+    print(json.dumps(items))
+
+
+def cmd_comment(args):
+    load_env()
+    check_site(args.site)
+    if not SET_RE.match(args.set or ''):
+        raise Fail('Invalid backup', 64)
+    data = read_comments(args.site)
+    if args.text:
+        data[args.set] = args.text[:255]
+    else:
+        data.pop(args.set, None)
+    write_comments(args.site, data)
+    print('{}')
+
+
+def cmd_restore(args):
+    load_env()
+    home, files = check_site(args.site)
+    if not SET_RE.match(args.set or ''):
+        raise Fail('Invalid backup', 64)
+    chosen = next((s for s in backup_sets(args.site) if s['set'] == args.set), None)
+    if chosen is None:
+        raise Fail('That backup no longer exists', 66)
+    # A safety net first: if the restore is not what they wanted, this is the way back.
+    create_set(args.site, 'Pre-restore', 'Automatic backup before restoring {}'.format(args.set))
+    with SiteLock(args.site):
+        state = site_state(args.site)
+        tree = os.path.join(state, 'restore-files')
+        sqldir = os.path.join(state, 'restore-db')
+        for path in (tree, sqldir):
+            shutil.rmtree(path, ignore_errors=True)
+        try:
+            kopia('snapshot', 'restore', chosen['files']['id'], tree)
+            kopia('snapshot', 'restore', chosen['db']['id'], sqldir)
+            dump = sqldir if os.path.isfile(sqldir) else os.path.join(sqldir, 'db.sql')
+            if not os.path.isfile(dump):
+                raise Fail('The database part of that backup is empty', 3)
+            rsync = ['rsync', '-a', '--delete'] + ['--exclude=' + p for p in IGNORE] + [tree + '/', files + '/']
+            r = run(rsync)
+            if r.returncode != 0:
+                raise Fail('Restoring files failed: {}'.format(r.stderr.strip()[-400:]), 3)
+            db = db_name(files, args.site)
+            tables = run([sql_tool(), '-N', '-B', '-e',
+                          "SELECT table_name FROM information_schema.tables WHERE table_schema='{}'".format(db)])
+            if tables.returncode != 0:
+                raise Fail('Could not read the database: {}'.format(tables.stderr.strip()[-300:]), 3)
+            drops = 'SET FOREIGN_KEY_CHECKS=0;\n' + ''.join(
+                'DROP TABLE IF EXISTS `{}`;\n'.format(t.replace('`', '')) for t in tables.stdout.split() if t)
+            r = run([sql_tool(), db], input=drops)
+            if r.returncode != 0:
+                raise Fail('Clearing the database failed: {}'.format(r.stderr.strip()[-300:]), 3)
+            with open(dump, 'rb') as f:
+                r = subprocess.run([sql_tool(), db], stdin=f, capture_output=True)
+            if r.returncode != 0:
+                raise Fail('Restoring the database failed: {}'.format(r.stderr.decode(errors='replace').strip()[-300:]), 3)
+        finally:
+            shutil.rmtree(tree, ignore_errors=True)
+            shutil.rmtree(sqldir, ignore_errors=True)
+    print(json.dumps({'restored': args.set}))
+
+
+def cmd_run_scheduled(args):
+    load_env()
+    with SiteLock('scheduled'):
+        failures = []
+        for entry in sorted(os.scandir('/sites'), key=lambda e: e.name):
+            if entry.name.startswith('.') or not entry.is_dir():
+                continue
+            try:
+                site = pwd.getpwuid(os.stat(entry.path).st_uid).pw_name
+                if site == 'root' or not os.path.exists(os.path.join(entry.path, 'files', 'wp-config.php')):
+                    continue
+                create_set(site, 'Scheduled', '')
+                print('ok   {}'.format(site))
+            except Fail as e:
+                failures.append(entry.name)
+                print('FAIL {}: {}'.format(entry.name, e), file=sys.stderr)
+            except Exception as e:  # keep going: one broken site must not stop the rest
+                failures.append(entry.name)
+                print('FAIL {}: {}'.format(entry.name, e), file=sys.stderr)
+        if failures:
+            raise Fail('{} site(s) failed'.format(len(failures)), 1)
+
+
+def cmd_maintenance(args):
+    load_env()
+    kopia('maintenance', 'run', '--full')
+    print('maintenance done')
+
+
+def main():
+    p = argparse.ArgumentParser(prog='pressctl-backup')
+    sub = p.add_subparsers(dest='cmd', required=True)
+    sub.add_parser('setup').set_defaults(fn=cmd_setup)
+    c = sub.add_parser('create'); c.add_argument('--site', required=True); c.add_argument('--context', default='Manual')
+    c.add_argument('--comment', default=''); c.set_defaults(fn=cmd_create)
+    l = sub.add_parser('list'); l.add_argument('--site', required=True); l.set_defaults(fn=cmd_list)
+    r = sub.add_parser('restore'); r.add_argument('--site', required=True); r.add_argument('--set', required=True)
+    r.set_defaults(fn=cmd_restore)
+    k = sub.add_parser('comment'); k.add_argument('--site', required=True); k.add_argument('--set', required=True)
+    k.add_argument('--text', default=''); k.set_defaults(fn=cmd_comment)
+    sub.add_parser('run-scheduled').set_defaults(fn=cmd_run_scheduled)
+    sub.add_parser('maintenance').set_defaults(fn=cmd_maintenance)
+    args = p.parse_args()
+    try:
+        args.fn(args)
+    except Fail as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(e.code)
+
+
+if __name__ == '__main__':
+    main()

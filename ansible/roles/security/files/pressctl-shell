@@ -51,7 +51,8 @@ for v in /etc/php/*/; do
 done
 
 # The database socket, so wp-cli and the mysql client can reach MariaDB.
-[ -S /run/mysqld/mysqld.sock ] && args+=(--ro-bind /run/mysqld /run/mysqld)
+# PHP's default MySQL socket is /var/run/mysqld/mysqld.sock, and /var/run is a link to /run
+[ -S /run/mysqld/mysqld.sock ] && args+=(--ro-bind /run/mysqld /run/mysqld --symlink ../run /var/run)
 
 args+=(
     --bind "$home" "$home"

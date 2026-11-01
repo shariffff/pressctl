@@ -41,5 +41,5 @@ pm.max_requests = {{ site_php_pm_max_requests }}
 ; Error logging for this pool
 php_admin_value[error_log] = {{ site_home }}/logs/debug.log
 
-; Include user-customizable settings
-include={{ site_home }}/.pressctl-pool.conf
+; Include the platform's settings for this site (root-owned, outside the site's home)
+include=/etc/pressctl/pool-includes/{{ site_id }}.conf

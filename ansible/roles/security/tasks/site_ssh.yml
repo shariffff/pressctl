@@ -108,3 +108,28 @@
   loop_control:
     label: "{{ item.pw_name }}"
   when: item.pw_name != 'root'
+
+# ── Memory, task and CPU caps per site user's logins ──
+- name: Install the login limits helper
+  ansible.builtin.copy:
+    src: pressctl-login-limits
+    dest: /usr/local/sbin/pressctl-login-limits
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cap every existing site user's logins
+  ansible.builtin.command: "/usr/local/sbin/pressctl-login-limits {{ item.pw_name }}"
+  environment:
+    NO_RELOAD: "1"
+  loop: "{{ sandbox_site_dirs.files }}"
+  loop_control:
+    label: "{{ item.pw_name }}"
+  when: item.pw_name != 'root'
+  register: login_limits
+  changed_when: false
+
+- name: Reload systemd so the new limits apply
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode

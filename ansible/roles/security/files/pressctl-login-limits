@@ -1,0 +1,29 @@
+#!/bin/bash
+# Cap what one site user's SSH/SFTP logins can use, so a runaway script in one
+# login can't push the other sites on the server into swap or the OOM killer.
+# systemd puts every login of a user in user-<uid>.slice; this gives that slice limits.
+# PHP-FPM (the website itself) is a separate service and is not affected.
+#
+#   pressctl-login-limits <site user>      (NO_RELOAD=1 skips the daemon-reload for batches)
+set -eu
+user=${1:?usage: pressctl-login-limits <site user>}
+uid=$(id -u "$user")
+[ "$uid" -ge 1000 ] || { echo "refusing to limit system user $user" >&2; exit 1; }
+
+dir=/etc/systemd/system/user-$uid.slice.d
+file=$dir/50-pressctl-limits.conf
+new=$(mktemp)
+trap 'rm -f "$new"' EXIT
+cat > "$new" <<CONF
+[Slice]
+MemoryHigh=768M
+MemoryMax=1G
+MemorySwapMax=0
+TasksMax=400
+CPUQuota=100%
+CONF
+if ! cmp -s "$new" "$file" 2>/dev/null; then
+    install -d -m 755 "$dir"
+    install -m 644 "$new" "$file"
+    [ -n "${NO_RELOAD:-}" ] || systemctl daemon-reload
+fi

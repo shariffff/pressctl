@@ -12,3 +12,8 @@
     shell: /usr/local/bin/pressctl-shell
     create_home: true
     state: present
+
+- name: Cap the memory and tasks of the site user's logins
+  ansible.builtin.command: "/usr/local/sbin/pressctl-login-limits {{ site_user }}"
+  changed_when: false
+  failed_when: false  # servers without the security role's helper still create the site

@@ -1,0 +1,89 @@
+---
+# Move each site's PHP-FPM pool settings out of the site's home.
+#
+# Older pools ended with `include=<site home>/.pressctl-pool.conf`. The site's
+# own user owns its home and could replace that file (for example with
+# `user = <another site>`), taking over another site's PHP the next time
+# PHP-FPM reloads. The settings now live in /etc/pressctl/pool-includes/ (root
+# only). The content is generated again from the site's domain; the old file in
+# the home is never trusted or copied. Safe to re-run.
+#
+#   ansible-playbook playbooks/pool_includes.yml -i "IP," -u root [--check --diff]
+- name: Move pool settings out of site homes
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Create the pool settings directory
+      ansible.builtin.file:
+        path: /etc/pressctl/pool-includes
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Find the sites
+      ansible.builtin.find:
+        paths: /sites
+        file_type: directory
+        depth: 1
+        hidden: false
+      register: site_dirs
+
+    - name: Write each site's pool settings
+      ansible.builtin.template:
+        src: ../roles/website/templates/pressctl-pool.conf.j2
+        dest: "/etc/pressctl/pool-includes/{{ item.pw_name }}.conf"
+        owner: root
+        group: root
+        mode: "0644"
+      vars:
+        domain: "{{ item.path | basename }}"
+      loop: "{{ site_dirs.files }}"
+      loop_control:
+        label: "{{ item.pw_name }}"
+      when: item.pw_name != 'root'
+
+    - name: Find the pool configurations
+      ansible.builtin.find:
+        paths: /etc/php
+        patterns: "*.conf"
+        recurse: true
+        use_regex: false
+      register: all_confs
+
+    - name: Point every pool at its new settings file
+      ansible.builtin.lineinfile:
+        path: "{{ item.path }}"
+        regexp: '^include=.*\.pressctl-pool\.conf$'
+        line: "include=/etc/pressctl/pool-includes/{{ item.path | basename | regex_replace('\\.conf$', '') }}.conf"
+      loop: "{{ all_confs.files | selectattr('path', 'search', '/fpm/pool\\.d/') | rejectattr('path', 'search', '/www\\.conf$') | list }}"
+      loop_control:
+        label: "{{ item.path }}"
+      register: repointed
+
+    - name: Check every PHP-FPM configuration before reloading
+      ansible.builtin.shell: |
+        set -e
+        for v in $(ls /etc/php); do
+          [ -x /usr/sbin/php-fpm$v ] && /usr/sbin/php-fpm$v -t
+        done
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Reload PHP-FPM
+      ansible.builtin.shell: |
+        for v in $(ls /etc/php); do
+          systemctl is-active --quiet php$v-fpm && systemctl reload php$v-fpm
+        done
+        true
+      when: not ansible_check_mode and (repointed.results | selectattr('changed') | list | length > 0)
+
+    - name: Remove the old, user-writable files
+      ansible.builtin.file:
+        path: "{{ item.path }}/.pressctl-pool.conf"
+        state: absent
+      loop: "{{ site_dirs.files }}"
+      loop_control:
+        label: "{{ item.path }}"

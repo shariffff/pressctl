@@ -23,6 +23,7 @@ import os
 import pwd
 import re
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -362,6 +363,13 @@ def cmd_schedule(args):
     print(json.dumps({'site': args.site, 'scheduled': args.state == 'on'}))
 
 
+SITE_TIME_LIMIT = int(os.environ.get('PRESSCTL_BACKUP_SITE_SECONDS', '1800'))
+
+
+def _site_timed_out(signum, frame):
+    raise Fail('Timed out after {} minutes'.format(SITE_TIME_LIMIT // 60), 1)
+
+
 def cmd_run_scheduled(args):
     load_env()
     with SiteLock('scheduled'):
@@ -375,7 +383,14 @@ def cmd_run_scheduled(args):
                     continue
                 if not os.path.exists(os.path.join(SCHEDULE_DIR, site)):
                     continue
-                create_set(site, 'Scheduled', '')
+                # One hung site must not hold the lock for the rest: subprocess.run kills
+                # the running child when the alarm raises, and create_set cleans up after itself.
+                signal.signal(signal.SIGALRM, _site_timed_out)
+                signal.alarm(SITE_TIME_LIMIT)
+                try:
+                    create_set(site, 'Scheduled', '')
+                finally:
+                    signal.alarm(0)
                 print('ok   {}'.format(site))
             except Fail as e:
                 failures.append(entry.name)

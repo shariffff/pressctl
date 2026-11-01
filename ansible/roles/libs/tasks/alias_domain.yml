@@ -73,6 +73,14 @@
   when: operation == 'issue_alias_ssl'
   tags: issue_alias_ssl
 
+- name: Make sure certbot is installed
+  ansible.builtin.apt:
+    name: certbot
+    state: present
+    update_cache: false
+  when: operation == 'issue_alias_ssl'
+  tags: issue_alias_ssl
+
 - name: Create certbot webroot
   ansible.builtin.file:
     path: /sites/.certbot

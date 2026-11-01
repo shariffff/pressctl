@@ -38,9 +38,16 @@ args=(
     --ro-bind-data 9 /etc/group
 )
 for f in ld.so.cache ld.so.conf ld.so.conf.d alternatives resolv.conf hosts nsswitch.conf \
-         localtime timezone ssl ca-certificates ca-certificates.conf php terminfo \
+         localtime timezone ssl ca-certificates ca-certificates.conf terminfo \
          profile profile.d bash.bashrc inputrc environment vim gitconfig mime.types; do
     [ -e "/etc/$f" ] && args+=(--ro-bind "/etc/$f" "/etc/$f")
+done
+
+# PHP's command-line settings only: /etc/php/*/fpm/pool.d would list every site on the server.
+for v in /etc/php/*/; do
+    for part in cli mods-available; do
+        [ -d "$v$part" ] && args+=(--ro-bind "$v$part" "$v$part")
+    done
 done
 
 # The database socket, so wp-cli and the mysql client can reach MariaDB.

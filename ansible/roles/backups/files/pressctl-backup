@@ -11,7 +11,8 @@ WordPress cores and plugins cost almost nothing.
   list     --site S                      JSON, newest first
   restore  --site S --set TS             takes a "Pre-restore" backup first
   comment  --site S --set TS --text T
-  run-scheduled                          back up every site (nightly cron)
+  schedule --site S --state on|off       include a site in the nightly run (claimed sites only)
+  run-scheduled                          back up the scheduled sites (nightly cron)
   maintenance                            Kopia repository maintenance (weekly cron)
 """
 import argparse
@@ -344,6 +345,23 @@ def cmd_restore(args):
     print(json.dumps({'restored': args.set}))
 
 
+SCHEDULE_DIR = os.path.join(STATE, 'scheduled')
+
+
+def cmd_schedule(args):
+    # Only sites a customer owns get the nightly backup; unclaimed pool sites are
+    # throwaway, so the nightly run skips every site without this marker.
+    if not re.fullmatch(r'[a-z0-9]{3,40}', args.site):
+        raise Fail('Bad site id', 2)
+    marker = os.path.join(SCHEDULE_DIR, args.site)
+    if args.state == 'on':
+        os.makedirs(SCHEDULE_DIR, mode=0o700, exist_ok=True)
+        open(marker, 'a').close()
+    elif os.path.exists(marker):
+        os.remove(marker)
+    print(json.dumps({'site': args.site, 'scheduled': args.state == 'on'}))
+
+
 def cmd_run_scheduled(args):
     load_env()
     with SiteLock('scheduled'):
@@ -354,6 +372,8 @@ def cmd_run_scheduled(args):
             try:
                 site = pwd.getpwuid(os.stat(entry.path).st_uid).pw_name
                 if site == 'root' or not os.path.exists(os.path.join(entry.path, 'files', 'wp-config.php')):
+                    continue
+                if not os.path.exists(os.path.join(SCHEDULE_DIR, site)):
                     continue
                 create_set(site, 'Scheduled', '')
                 print('ok   {}'.format(site))
@@ -384,6 +404,8 @@ def main():
     r.set_defaults(fn=cmd_restore)
     k = sub.add_parser('comment'); k.add_argument('--site', required=True); k.add_argument('--set', required=True)
     k.add_argument('--text', default=''); k.set_defaults(fn=cmd_comment)
+    sc = sub.add_parser('schedule'); sc.add_argument('--site', required=True)
+    sc.add_argument('--state', choices=['on', 'off'], required=True); sc.set_defaults(fn=cmd_schedule)
     sub.add_parser('run-scheduled').set_defaults(fn=cmd_run_scheduled)
     sub.add_parser('maintenance').set_defaults(fn=cmd_maintenance)
     args = p.parse_args()

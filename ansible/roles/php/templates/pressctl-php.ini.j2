@@ -1,0 +1,19 @@
+; {{ ansible_managed }}
+; Server-wide PHP-FPM settings (every site, this PHP version).
+
+expose_php = Off
+
+; OPcache: one cache for all sites. Size it for many copies of WordPress.
+opcache.enable = 1
+opcache.memory_consumption = {{ php_opcache_memory_mb }}
+opcache.interned_strings_buffer = {{ php_opcache_interned_strings_mb }}
+opcache.max_accelerated_files = {{ php_opcache_max_files }}
+opcache.validate_timestamps = 1
+opcache.revalidate_freq = {{ php_opcache_revalidate_freq }}
+; Sites share the cache: check that the site asking for a cached script may
+; actually read the file, so one site can't run another site's cached code.
+opcache.validate_permission = 1
+
+; Many sites means many paths to resolve
+realpath_cache_size = 4096k
+realpath_cache_ttl = 600

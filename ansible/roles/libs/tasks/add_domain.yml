@@ -29,13 +29,42 @@
     state: absent
   tags: add_domain
 
-- name: Ensure site logs directory exists
+- name: Ensure site logs directory exists (PHP's own error log)
   ansible.builtin.file:
     path: "/sites/{{ domain }}/logs"
     state: directory
     owner: "{{ site_id }}"
     group: "{{ site_id }}"
     mode: "0755"
+  tags: add_domain
+
+# nginx opens its logs as root, so they live in a root-owned directory the site
+# user can read but not change (in a directory the user owns, a log could be
+# swapped for a link to a system file). The site's group may read them.
+- name: Ensure the root-owned web log directory exists
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/log/pressctl, group: root, mode: "0755" }
+    - { path: /var/log/pressctl/sites, group: root, mode: "0711" }
+    - { path: "/var/log/pressctl/sites/{{ domain }}", group: "{{ site_id }}", mode: "0750" }
+  loop_control:
+    label: "{{ item.path }}"
+  tags: add_domain
+
+# nginx's workers (www-data) reopen the logs themselves after a rotation
+# (USR1), so they need to pass through the directory. Traverse only.
+- name: Let nginx's workers reopen the site's web logs
+  ansible.posix.acl:
+    path: "/var/log/pressctl/sites/{{ domain }}"
+    entity: www-data
+    etype: user
+    permissions: x
+    state: present
   tags: add_domain
 
 - name: Deploy main site config

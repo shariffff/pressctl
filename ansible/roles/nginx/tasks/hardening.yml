@@ -1,0 +1,71 @@
+---
+# Server-wide nginx hardening, logging and limits. Imported by main.yml and
+# applied to existing servers by playbooks/harden_server.yml. Safe to re-run.
+
+# Root reads these; nobody else needs to see which sites live on the server.
+- name: Keep the site configuration directories root-only
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+
+- name: Create the global configuration directory
+  ansible.builtin.file:
+    path: /etc/nginx/global
+    state: directory
+    mode: "0755"
+
+- name: Trust Cloudflare's visitor address header from Cloudflare only
+  ansible.builtin.template:
+    src: cloudflare-realip.conf.j2
+    dest: /etc/nginx/global/cloudflare-realip.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+# nginx opens every log as root. Site logs live here, outside the site homes,
+# so a site user can never swap a log file for a link to a system file.
+# Each site gets /var/log/pressctl/sites/<domain> (root:<site>, 0750).
+- name: Create the site log root
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/log/pressctl, mode: "0755" }
+    - { path: /var/log/pressctl/sites, mode: "0711" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Rotate the site web and PHP-FPM logs
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/pressctl-sites
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed | default('Managed by pressctl') }}
+      # nginx access/error logs and PHP-FPM slow logs of every site.
+      /var/log/pressctl/sites/*/*.log {
+          daily
+          rotate 14
+          missingok
+          notifempty
+          compress
+          delaycompress
+          sharedscripts
+          postrotate
+              [ -s /var/run/nginx.pid ] && kill -USR1 "$(cat /var/run/nginx.pid)" || true
+              for unit in $(systemctl list-units --type=service --state=running --plain --no-legend 'php*-fpm.service' | awk '{print $1}'); do
+                  systemctl kill --kill-whom=main --signal=USR1 "$unit" || true
+              done
+          endscript
+      }

@@ -1,0 +1,107 @@
+---
+# Server-wide security extras: WordPress brute-force bans, automatic security
+# updates, an optional malware scan and the site stats tool. Imported by
+# main.yml and applied to existing servers by playbooks/harden_server.yml.
+
+# ── fail2ban for WordPress logins ──
+- name: Install the WordPress fail2ban filter
+  ansible.builtin.template:
+    src: pressctl-wordpress.filter.j2
+    dest: /etc/fail2ban/filter.d/pressctl-wordpress.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: wp_f2b_filter
+
+- name: Install the WordPress fail2ban jail
+  ansible.builtin.template:
+    src: pressctl-wordpress.jail.j2
+    dest: /etc/fail2ban/jail.d/pressctl-wordpress.local
+    owner: root
+    group: root
+    mode: "0644"
+  register: wp_f2b_jail
+
+# The jail reads /var/log/nginx/access.log too, so it always has a log to
+# watch on a server with no sites yet (fail2ban won't start a jail without one).
+- name: Make sure nginx's main access log exists
+  ansible.builtin.file:
+    path: /var/log/nginx/access.log
+    state: touch
+    access_time: preserve
+    modification_time: preserve
+    mode: "0640"
+
+- name: Restart fail2ban for the WordPress jail
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted
+    enabled: true
+  when: (wp_f2b_filter.changed or wp_f2b_jail.changed) and not ansible_check_mode
+
+# ── Automatic security updates ──
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+
+- name: Turn on daily automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      // {{ ansible_managed | default('Managed by pressctl') }}
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Configure automatic updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52pressctl-unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      // {{ ansible_managed | default('Managed by pressctl') }}
+      // Ubuntu security updates are on by default (50unattended-upgrades).
+      // Also take PHP and nginx updates from the repositories pressctl adds.
+      Unattended-Upgrade::Origins-Pattern {
+      {% for origin in unattended_upgrades_extra_origins %}
+          "{{ origin }}";
+      {% endfor %}
+      };
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+      Unattended-Upgrade::Automatic-Reboot "{{ 'true' if unattended_upgrades_reboot else 'false' }}";
+      Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_upgrades_reboot_time }}";
+
+# ── Optional malware scan ──
+- name: Install ClamAV
+  ansible.builtin.apt:
+    name: [clamav, clamav-freshclam]
+    state: present
+  when: malware_scan_enabled | bool
+
+- name: Schedule the weekly malware scan of the sites
+  ansible.builtin.cron:
+    name: pressctl-malware-scan
+    user: root
+    weekday: "{{ malware_scan_weekday }}"
+    hour: "{{ malware_scan_hour }}"
+    minute: "17"
+    job: >-
+      nice -n 19 ionice -c3 clamscan -r -i --no-summary
+      --exclude-dir='^/sites/[^/]+/(tmp|logs)' /sites
+      >> /var/log/pressctl/malware-scan.log 2>&1
+    state: "{{ 'present' if malware_scan_enabled | bool else 'absent' }}"
+
+# ── Which site is slow ──
+- name: Install the site stats tool
+  ansible.builtin.copy:
+    src: pressctl-site-stats
+    dest: /usr/local/sbin/pressctl-site-stats
+    owner: root
+    group: root
+    mode: "0755"

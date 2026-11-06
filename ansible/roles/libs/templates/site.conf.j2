@@ -1,4 +1,4 @@
-fastcgi_cache_path /cache/{{ domain }} levels=1:2 keys_zone={{ domain }}:100m inactive=1d; # {{ ansible_managed }}
+fastcgi_cache_path /cache/{{ domain }} levels=1:2 keys_zone={{ domain }}:10m max_size={{ site_page_cache_max_size | default("1g") }} inactive=1d; # {{ ansible_managed }}
 include sites-available/{{ domain }}/before/*; # {{ ansible_managed }}
 
 server {
@@ -18,8 +18,8 @@ server {
 
 	index index.html index.php;
 
-	access_log /sites/{{ domain }}/logs/access.log;
-	error_log /sites/{{ domain }}/logs/error.log;
+	access_log /var/log/pressctl/sites/{{ domain }}/access.log pressctl;
+	error_log /var/log/pressctl/sites/{{ domain }}/error.log;
 
 	# Don't allow pages to be rendered in an iframe on external domains.
 	add_header X-Frame-Options "SAMEORIGIN";
@@ -27,8 +27,8 @@ server {
 	# MIME sniffing prevention
 	add_header X-Content-Type-Options "nosniff";
 
-	# Enable cross-site scripting filter in supported browsers.
-	add_header X-Xss-Protection "1; mode=block";
+	# Browsers must use HTTPS for this site from now on (X-XSS-Protection is obsolete).
+	add_header Strict-Transport-Security "max-age=31536000" always;
 
 	# Limit referrer information sent with requests to third parties.
 	add_header Referrer-Policy "strict-origin-when-cross-origin";

@@ -1,4 +1,33 @@
-env[WORDMON_SITE] = '1' ; # {{ ansible_managed }}
-env[WORDMON_LOG_PATH] = '/sites/{{ domain }}/logs/debug.log'; # {{ ansible_managed }}
-env[WORDMON_CACHE_KEY_SALT] = '{{ domain }}'; # {{ ansible_managed }}
-env[WORDMON_CACHE_PATH] = '/cache/{{ domain }}' ; # {{ ansible_managed }}
+; {{ ansible_managed }}
+; Platform settings for the PHP-FPM pool of {{ domain }}. Root-owned and kept
+; outside the site's home, so the site's own user can't change them.
+env[WORDMON_SITE] = '1'
+env[WORDMON_LOG_PATH] = '/sites/{{ domain }}/logs/debug.log'
+env[WORDMON_CACHE_KEY_SALT] = '{{ domain }}'
+env[WORDMON_CACHE_PATH] = '/cache/{{ domain }}'
+
+; Files: the site's PHP may only open files in its own directory (plus the
+; shared, read-only file manager code and its own page cache), never the rest
+; of the server or another site.
+php_admin_value[open_basedir] = /sites/{{ domain }}/:/cache/{{ domain }}/:{{ elfinder_base | default('/opt/pressctl/elfinder') }}/
+
+; Temporary files and sessions stay inside the site, not in a /tmp every site shares.
+env[TMPDIR] = /sites/{{ domain }}/tmp
+php_admin_value[sys_temp_dir] = /sites/{{ domain }}/tmp
+php_admin_value[upload_tmp_dir] = /sites/{{ domain }}/tmp
+php_admin_value[session.save_path] = /sites/{{ domain }}/tmp/sessions
+php_admin_value[session.gc_probability] = 1
+php_admin_value[session.gc_divisor] = 100
+
+; Time: stop a request that hangs (waiting on the database or a remote call
+; doesn't count towards max_execution_time, so this is the real cap).
+request_terminate_timeout = {{ site_php_request_terminate_timeout | default('120s') }}
+
+; Slow requests: PHP writes a stack trace of anything slower than this to the
+; site's root-owned log directory, so you can see which plugin was running.
+request_slowlog_timeout = {{ site_php_slowlog_timeout | default('5s') }}
+slowlog = /var/log/pressctl/sites/{{ domain }}/php-slow.log
+
+; Status page for pressctl-site-stats (read over the pool's socket by root;
+; nginx never routes this path to PHP).
+pm.status_path = /pressctl-fpm-status

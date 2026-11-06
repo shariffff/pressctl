@@ -26,6 +26,7 @@
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
     mode: "0640"
+    follow: false
 
 - name: Check if WordPress is installed
   become_user: "{{ site_user }}"

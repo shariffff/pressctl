@@ -24,3 +24,6 @@
 
 - name: Import cron tasks
   ansible.builtin.include_tasks: tasks/cron.yml
+
+- name: Import per-site hardening tasks
+  ansible.builtin.include_tasks: tasks/hardening.yml

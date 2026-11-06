@@ -4,7 +4,7 @@
 
 # PHP-FPM Pool Configuration (per-site settings)
 # Process manager mode: static, dynamic, or ondemand
-site_php_pm: "dynamic"
+site_php_pm: "ondemand"
 site_php_pm_max_children: 5
 site_php_pm_start_servers: 1
 site_php_pm_min_spare_servers: 1
@@ -21,6 +21,31 @@ wp_debug_display: false
 # Set false to skip
 wordsail_connector_enabled: true
 wordsail_connector_url: "https://managed.wordsail.com/api/connector/v1/plugin/download/wordsail-connector-latest.zip"
+
+# Page cache (nginx FastCGI cache) for anonymous visitors. Logged-in users,
+# POSTs, query strings, wp-admin, carts and checkouts are never cached. Pages
+# can be up to this old after an edit, so keep it short. "0" turns it off.
+site_page_cache_ttl: "5m"
+# Disk space one site's page cache may use
+site_page_cache_max_size: "1g"
+
+# Longest a PHP request may run, wall clock (includes time waiting on the
+# database or remote HTTP calls, which max_execution_time does not count)
+site_php_request_terminate_timeout: "120s"
+# Requests slower than this get a PHP stack trace in the site's php-slow.log
+site_php_slowlog_timeout: "5s"
+
+# Most database connections one site may hold at once
+site_db_max_user_connections: 20
+
+# Redis object cache: each site gets its own Redis account (limited to its own
+# keys) on the sites' Redis, written into wp-config.php as WP_REDIS_* settings.
+site_redis_enabled: true
+# Install and switch on the Redis Object Cache plugin. Only new sites do this
+# by default; on existing sites the settings are written but nothing is
+# switched on (playbooks/harden_server.yml), since a site may run its own cache.
+site_redis_activate_plugin: true
+redis_sites_socket: /run/redis-sites/redis.sock
 
 # Cron Configuration
 # Use WordPress built-in cron (false) or system cron (true)

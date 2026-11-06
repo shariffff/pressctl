@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+# WordPress brute force, from the sites' access logs (pressctl log format).
+# A failed login answers 200 (a successful one redirects with 302); 429 is
+# nginx's login rate limit.
+[Definition]
+failregex = ^<HOST> \S+ \S+ \[[^\]]*\] "POST /(?:wp-login\.php|xmlrpc\.php)[^"]*" (?:200|429) 
+ignoreregex =

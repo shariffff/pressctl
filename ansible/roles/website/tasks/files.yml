@@ -9,6 +9,9 @@
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
     mode: "{{ item.mode }}"
+    # These paths are the site user's: never follow a link they put there
+    # (root would otherwise change the owner of whatever it points at).
+    follow: false
   loop:
     - { path: "{{ site_home }}", mode: "0750" }
     - { path: "{{ site_home }}/files", mode: "0755" }
@@ -16,6 +19,59 @@
     - { path: "{{ site_home }}/.local/bin", mode: "0755" }
     - { path: "{{ site_home }}/.ssh", mode: "0700" }
     - { path: "{{ site_home }}/.wp-cli", mode: "0755" }
+    - { path: "{{ site_home }}/tmp", mode: "0700" }
+    - { path: "{{ site_home }}/tmp/sessions", mode: "0700" }
+
+# nginx and PHP-FPM open these logs as root, so they live outside the site's
+# home in a directory the site user can read but never change (a log in a
+# directory the user owns could be swapped for a link to a system file).
+# PHP-FPM refuses to start if a pool's slow log directory is missing, so this
+# must exist before the pool is written.
+- name: Ensure the root-owned web log directory exists
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/log/pressctl, group: root, mode: "0755" }
+    - { path: /var/log/pressctl/sites, group: root, mode: "0711" }
+    - { path: "/var/log/pressctl/sites/{{ domain }}", group: "{{ site_group }}", mode: "0750" }
+  loop_control:
+    label: "{{ item.path }}"
+
+# nginx's workers (www-data) reopen the logs themselves after a rotation
+# (USR1), so they need to pass through the directory. Traverse only.
+- name: Let nginx's workers reopen the site's web logs
+  ansible.posix.acl:
+    path: "/var/log/pressctl/sites/{{ domain }}"
+    entity: www-data
+    etype: user
+    permissions: x
+    state: present
+
+# The site's own logs (PHP's debug.log) stay in ~/logs and are rotated as the
+# site user, so logrotate never works as root inside a directory the user owns.
+- name: Rotate the site's own logs as the site user
+  ansible.builtin.copy:
+    dest: "/etc/logrotate.d/pressctl-site-{{ domain }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed | default('Managed by pressctl') }}
+      {{ site_home }}/logs/*.log {
+          su {{ site_user }} {{ site_group }}
+          weekly
+          rotate 4
+          maxsize 50M
+          missingok
+          notifempty
+          compress
+          delaycompress
+          copytruncate
+      }
 
 - name: Let the web server traverse the site directory
   ansible.posix.acl:

@@ -66,6 +66,18 @@ args+=(
 # rename nor delete it. PHP-FPM, outside the sandbox, still sees the real files.
 [ -d "$home/tools" ] && args+=(--perms 0000 --tmpfs "$home/tools" --remount-ro "$home/tools")
 
+# The site's web logs (nginx access/error, PHP slow log) are written by root
+# outside the home, so they can't be tampered with. Show them read-only in
+# ~/logs/server. Skipped if the user put something other than a directory there.
+weblogs=/var/log/pressctl/sites/${home##*/}
+dest=$home/logs/server
+if [ -d "$weblogs" ] && { [ ! -e "$dest" ] || { [ -d "$dest" ] && [ ! -L "$dest" ]; }; }; then
+    args+=(--ro-bind "$weblogs" "$dest")
+fi
+
+# The sites' Redis (object cache) socket, so wp-cli sees the same cache as the site.
+[ -d /run/redis-sites ] && args+=(--ro-bind /run/redis-sites /run/redis-sites)
+
 args+=(
     --chdir "$home"
     --clearenv

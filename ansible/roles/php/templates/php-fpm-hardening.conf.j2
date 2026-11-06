@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Sandboxing for PHP-FPM (every site's PHP runs under this service).
+[Service]
+# A site's PHP sees only its own processes in /proc, not other sites'.
+ProtectProc=invisible
+# /usr, /boot and /etc are read-only; /home, /root and /run/user are hidden.
+ProtectSystem=full
+ProtectHome=yes
+# A private /tmp for PHP (each site also has its own temp dir).
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+LimitNOFILE=65535

@@ -71,6 +71,9 @@
     state: present
     backrefs: true
 
+- name: Apply the PHP-FPM hardening and OPcache settings
+  ansible.builtin.import_tasks: hardening.yml
+
 - name: Install Composer
   when: php_install_composer
   block:

@@ -1,0 +1,205 @@
+---
+# Per-site hardening and tuning. Runs at the end of every site creation and,
+# through playbooks/harden_server.yml, once for every site on an existing
+# server. Everything here is safe to re-run.
+#
+# Needs: domain, site_id, site_user, site_group, site_home, php_version.
+# Set pressctl_defer_reload=true to skip the nginx / PHP-FPM reloads (the
+# server-wide playbook reloads once after all sites).
+
+# ── Logs: from the site's home to the root-owned log directory ──
+# Older sites' nginx configs point at /sites/<domain>/logs, a directory the
+# site user owns. nginx opens its logs as root, so the user could swap a log
+# for a link to any system file. Point them at the root-owned directory.
+- name: Find this site's nginx configuration files
+  ansible.builtin.find:
+    paths: "/etc/nginx/sites-available/{{ domain }}"
+    recurse: true
+    # find matches each line from its start; config lines start with a tab
+    contains: '.*/sites/[^/ ]+/logs/(access|error)\.log'
+  register: site_nginx_log_confs
+
+- name: Move the site's nginx logs out of the site's home
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: '(access_log|error_log)\s+/sites/([^/ ]+)/logs/(access|error)\.log(\s+\w+)?;'
+    replace: '\1 /var/log/pressctl/sites/\2/\3.log\4;'
+  loop: "{{ site_nginx_log_confs.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: site_log_moves
+
+- name: Use the timing log format for the site's access log
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: 'access_log /var/log/pressctl/sites/([^/ ]+)/access\.log;'
+    replace: 'access_log /var/log/pressctl/sites/\1/access.log pressctl;'
+  loop: "{{ site_nginx_log_confs.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: site_log_formats
+
+# ── Page cache ──
+# 100 MB of shared memory per site for cache keys was far more than needed
+# (1 MB holds ~8000 pages); also cap the cache's disk use.
+- name: Shrink the page cache key zone and cap its size
+  ansible.builtin.replace:
+    path: "/etc/nginx/sites-available/{{ domain }}/{{ domain }}"
+    regexp: 'keys_zone=([^:\s]+):100m inactive='
+    replace: 'keys_zone=\1:10m max_size={{ site_page_cache_max_size }} inactive='
+  register: site_cache_zone
+  failed_when: false
+
+- name: Check whether the site already has page-cache rules of its own
+  ansible.builtin.shell: >-
+    grep -rlE 'fastcgi_cache(_bypass)?\s|include\s+global/fastcgi-cache\.conf'
+    /etc/nginx/sites-available/{{ domain }}/server /etc/nginx/sites-available/{{ domain }}/location
+    | grep -v '/pressctl-page-cache\.conf$' || true
+  register: site_cache_existing
+  changed_when: false
+
+- name: Turn on the page cache for anonymous visitors
+  ansible.builtin.copy:
+    dest: "/etc/nginx/sites-available/{{ domain }}/{{ item.dir }}/pressctl-page-cache.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ item.content }}"
+  loop:
+    - dir: server
+      content: |
+        # {{ ansible_managed | default('Managed by pressctl') }}
+        # Decide which requests skip the page cache ($skip_cache): logged-in
+        # users, POSTs, query strings, wp-admin, carts and checkouts.
+        include global/fastcgi-cache.conf;
+    - dir: location
+      content: |
+        # {{ ansible_managed | default('Managed by pressctl') }}
+        # Page cache for anonymous visitors (see server/pressctl-page-cache.conf).
+        fastcgi_cache {{ domain }};
+        fastcgi_cache_valid 200 301 302 {{ site_page_cache_ttl }};
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache $skip_cache;
+        fastcgi_cache_lock on;
+  loop_control:
+    label: "{{ item.dir }}"
+  register: site_cache_files
+  when:
+    - site_page_cache_ttl | string != "0"
+    - site_cache_existing.stdout | length == 0
+
+- name: Turn the page cache off when it is disabled
+  ansible.builtin.file:
+    path: "/etc/nginx/sites-available/{{ domain }}/{{ item }}/pressctl-page-cache.conf"
+    state: absent
+  loop: [server, location]
+  register: site_cache_off
+  when: site_page_cache_ttl | string == "0"
+
+# ── PHP-FPM pool ──
+# On-demand workers: an idle site holds no PHP processes at all.
+- name: Find the site's PHP-FPM pool
+  ansible.builtin.stat:
+    path: "/etc/php/{{ php_version }}/fpm/pool.d/{{ site_id }}.conf"
+  register: site_pool_file
+
+- name: Run the site's PHP workers on demand
+  ansible.builtin.lineinfile:
+    path: "/etc/php/{{ php_version }}/fpm/pool.d/{{ site_id }}.conf"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    insertafter: '^pm\.max_children'
+  loop:
+    - { regexp: '^pm\s*=', line: "pm = {{ site_php_pm }}" }
+    - { regexp: '^pm\.process_idle_timeout', line: "pm.process_idle_timeout = {{ site_php_pm_process_idle_timeout }}" }
+  loop_control:
+    label: "{{ item.line }}"
+  register: site_pool_pm
+  when: site_pool_file.stat.exists
+
+- name: Create the pool settings directory
+  ansible.builtin.file:
+    path: /etc/pressctl/pool-includes
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Write the site's root-owned pool settings
+  ansible.builtin.template:
+    src: pressctl-pool.conf.j2
+    dest: "/etc/pressctl/pool-includes/{{ site_id }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: site_pool_include
+
+# ── WordPress ──
+- name: Check for the site's wp-config.php
+  ansible.builtin.stat:
+    path: "{{ site_home }}/files/wp-config.php"
+  register: site_wp_config
+
+- name: Check whether wp-admin can edit plugin and theme code
+  become_user: "{{ site_user }}"
+  ansible.builtin.command: wp config get DISALLOW_FILE_EDIT
+  args:
+    chdir: "{{ site_home }}/files"
+  register: site_file_edit
+  changed_when: false
+  failed_when: false
+  when: site_wp_config.stat.exists
+
+# A stolen admin password must not turn into running code on the server.
+# Plugins and themes can still be installed and updated.
+- name: Turn off the plugin and theme code editor in wp-admin
+  become_user: "{{ site_user }}"
+  ansible.builtin.command: wp config set DISALLOW_FILE_EDIT true --raw --type=constant
+  args:
+    chdir: "{{ site_home }}/files"
+  when:
+    - site_wp_config.stat.exists
+    - site_file_edit.stdout | default('') | trim not in ['1', 'true']
+
+- name: Set up the site's Redis object cache account
+  ansible.builtin.include_tasks: redis.yml
+  when: site_redis_enabled | bool
+
+- name: Let fail2ban watch the site's access log
+  ansible.builtin.command: fail2ban-client reload pressctl-wordpress
+  changed_when: false
+  failed_when: false
+  when: not (pressctl_defer_reload | default(false) | bool)
+
+# ── Apply ──
+- name: Check the nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  when:
+    - not (pressctl_defer_reload | default(false) | bool)
+    - not ansible_check_mode
+
+- name: Reload nginx for the site's changes
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when:
+    - not (pressctl_defer_reload | default(false) | bool)
+    - not ansible_check_mode
+    - site_log_moves.changed or site_log_formats.changed or site_cache_zone.changed or site_cache_files.changed or site_cache_off.changed
+
+- name: Check the PHP-FPM configuration
+  ansible.builtin.command: "php-fpm{{ php_version }} -t"
+  changed_when: false
+  when:
+    - not (pressctl_defer_reload | default(false) | bool)
+    - not ansible_check_mode
+
+- name: Reload PHP-FPM for the site's changes
+  ansible.builtin.systemd:
+    name: "php{{ php_version }}-fpm"
+    state: reloaded
+  when:
+    - not (pressctl_defer_reload | default(false) | bool)
+    - not ansible_check_mode
+    - site_pool_pm.changed or site_pool_include.changed or (site_redis_group.changed | default(false))

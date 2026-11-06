@@ -5,6 +5,7 @@
 # It puts the session in a bubblewrap sandbox that can see the system programs
 # (read-only), a private /tmp, and ONLY the site's own directory. Nothing else on the
 # server is visible: no /etc/nginx, no other sites, no /root, no other processes.
+# Inside the site directory, the panel's tools folder (~/tools) is hidden too.
 #
 # Interactive logins get a login bash; commands (`-c ...`, which is how sshd
 # runs sftp-server, scp and rsync) are passed to bash unchanged.
@@ -56,6 +57,16 @@ done
 
 args+=(
     --bind "$home" "$home"
+)
+
+# The panel's site tools (SSO guard and its cookie secret, Adminer and its DB
+# credentials, Tiny File Manager) live in ~/tools and run as the site user, but
+# they are ours, not the customer's. Cover the folder with an empty, read-only,
+# mode-000 tmpfs so SSH/SFTP/scp/rsync sessions can neither list, read, change,
+# rename nor delete it. PHP-FPM, outside the sandbox, still sees the real files.
+[ -d "$home/tools" ] && args+=(--perms 0000 --tmpfs "$home/tools" --remount-ro "$home/tools")
+
+args+=(
     --chdir "$home"
     --clearenv
     --setenv HOME "$home" --setenv USER "$user" --setenv LOGNAME "$user"

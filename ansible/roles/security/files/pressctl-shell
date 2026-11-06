@@ -60,7 +60,7 @@ args+=(
 )
 
 # The panel's site tools (SSO guard and its cookie secret, Adminer and its DB
-# credentials, Tiny File Manager) live in ~/tools and run as the site user, but
+# credentials, the file manager's entry point) live in ~/tools and run as the site user, but
 # they are ours, not the customer's. Cover the folder with an empty, read-only,
 # mode-000 tmpfs so SSH/SFTP/scp/rsync sessions can neither list, read, change,
 # rename nor delete it. PHP-FPM, outside the sandbox, still sees the real files.

@@ -31,18 +31,33 @@ wp_cron_interval: "*/5"  # Every 5 minutes when using system cron
 site_dir_permissions: "0755"
 site_file_permissions: "0644"
 
-# Site tools (Tiny File Manager + Adminer) behind WordSail SSO
+# Site tools (elFinder file manager + Adminer) behind WordSail SSO
 # Set false to skip deploying the tools entirely
 site_tools_enabled: true
 
-# Root directory that Tiny File Manager manages (separate from WordPress uploads)
+# Root directory the file manager manages (the site's WordPress files)
 filemanager_root: "{{ site_home }}/files"
 
 # Panel SSO authority
 wordsail_sso_server: "managed.wordsail.com"
 
+# elFinder file manager. Installed once per server, root-owned, outside every
+# site directory (so site users never see it over SSH/SFTP); each site only
+# gets an SSO-guarded entry point. The clone is checked against the commit.
+elfinder_version: "2.1.70"
+elfinder_commit: "e7ea668fd569fc9903fb1c431d47d58f2daad2f2"
+elfinder_repo: "https://github.com/Studio-42/elFinder.git"
+elfinder_base: "/opt/pressctl/elfinder"
+elfinder_home: "{{ elfinder_base }}/{{ elfinder_version }}"
+
+# jQuery and jQuery UI for elFinder's browser UI (the versions elFinder targets)
+elfinder_jquery_version: "4.0.0"
+elfinder_jquery_url: "https://registry.npmjs.org/jquery/-/jquery-4.0.0.tgz"
+elfinder_jquery_sha256: "7ac123e4992439dc6a966cb4444fceb7f4698db94904a1256df542d5deb80f59"
+elfinder_jquery_ui_version: "1.14.2"
+elfinder_jquery_ui_url: "https://registry.npmjs.org/jquery-ui/-/jquery-ui-1.14.2.tgz"
+elfinder_jquery_ui_sha256: "8f021edc451532d858f438eff47780b646df4fb36d2a7232eedb35c38bc6a244"
+
 # Pinned tool downloads
-tinyfilemanager_url: "https://raw.githubusercontent.com/prasathmani/tinyfilemanager/2.6/tinyfilemanager.php"
-tinyfilemanager_sha256: "94677b427bf60e3ee0980b3136273f580b38776e4aae5a6388d9c1528a7e2fe1"
 adminer_url: "https://github.com/vrana/adminer/releases/download/v6.0.1/adminer-6.0.1.php"
 adminer_sha256: "1815c03f26e21d533e729c0b09bc69a59c902a6440409d013105ee679dff006c"

@@ -29,10 +29,11 @@ type InventoryGenerator struct {
 	outputDir string
 }
 
-// NewInventoryGenerator creates a new inventory generator
+// NewInventoryGenerator creates a new inventory generator. Each run gets its
+// own private directory under the system temp dir (see Generate).
 func NewInventoryGenerator() *InventoryGenerator {
 	return &InventoryGenerator{
-		outputDir: "/tmp",
+		outputDir: "",
 	}
 }
 
@@ -77,13 +78,19 @@ func (ig *InventoryGenerator) Generate(server models.Server, command string, glo
 		return "", fmt.Errorf("failed to parse inventory template: %w", err)
 	}
 
-	// Generate unique filename
-	timestamp := time.Now().Format("20060102-150405")
-	outputPath := filepath.Join(ig.outputDir, fmt.Sprintf("pressctl-%s-%s.ini", server.Name, timestamp))
-
-	// Create output file
-	f, err := os.Create(outputPath)
+	// The inventory can hold secrets (global vars such as the MariaDB admin
+	// password), so it goes in a fresh directory only this user can open
+	// (0700, random name) as a new 0600 file. A fixed name in the shared /tmp
+	// could be read, or created first, by another local user.
+	dir, err := os.MkdirTemp(ig.outputDir, "pressctl-")
 	if err != nil {
+		return "", fmt.Errorf("failed to create inventory directory: %w", err)
+	}
+	outputPath := filepath.Join(dir, "inventory.ini")
+
+	f, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		os.RemoveAll(dir)
 		return "", fmt.Errorf("failed to create inventory file: %w", err)
 	}
 	defer f.Close()
@@ -100,6 +107,11 @@ func (ig *InventoryGenerator) Generate(server models.Server, command string, glo
 func (ig *InventoryGenerator) Cleanup(inventoryPath string) error {
 	if inventoryPath == "" {
 		return nil
+	}
+	// Remove the run's private directory (inventory and extra-vars file).
+	dir := filepath.Dir(inventoryPath)
+	if strings.HasPrefix(filepath.Base(dir), "pressctl-") {
+		return os.RemoveAll(dir)
 	}
 	return os.Remove(inventoryPath)
 }

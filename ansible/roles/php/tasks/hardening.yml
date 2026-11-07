@@ -1,0 +1,96 @@
+---
+# Server-wide PHP-FPM hardening and tuning for every installed PHP version.
+# Imported by main.yml and applied to existing servers by
+# playbooks/harden_server.yml. Safe to re-run.
+
+- name: Find the installed PHP-FPM versions
+  ansible.builtin.find:
+    paths: /etc/php
+    file_type: directory
+    depth: 1
+  register: php_version_dirs
+
+- name: Keep the PHP-FPM versions with an FPM setup
+  ansible.builtin.stat:
+    path: "{{ item.path }}/fpm/pool.d"
+  loop: "{{ php_version_dirs.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: php_pool_dirs
+
+- name: Note the PHP-FPM versions to harden
+  ansible.builtin.set_fact:
+    php_fpm_versions: "{{ php_pool_dirs.results | selectattr('stat.exists') | map(attribute='item.path') | map('basename') | list }}"
+
+# Root reads pool definitions; they list every site on the server.
+- name: Keep the pool definitions root-only
+  ansible.builtin.file:
+    path: "/etc/php/{{ item }}/fpm/pool.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop: "{{ php_fpm_versions }}"
+
+- name: Apply the server-wide PHP settings (OPcache, permission checks)
+  ansible.builtin.template:
+    src: pressctl-php.ini.j2
+    dest: "/etc/php/{{ item }}/fpm/conf.d/99-pressctl.ini"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ php_fpm_versions }}"
+  register: php_ini_result
+
+- name: Create the PHP-FPM service override directories
+  ansible.builtin.file:
+    path: "/etc/systemd/system/php{{ item }}-fpm.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ php_fpm_versions }}"
+
+- name: Sandbox the PHP-FPM services
+  ansible.builtin.template:
+    src: php-fpm-hardening.conf.j2
+    dest: "/etc/systemd/system/php{{ item }}-fpm.service.d/pressctl-hardening.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ php_fpm_versions }}"
+  register: php_unit_result
+
+# Each site's PHP temp dir (/sites/<domain>/.php-tmp) holds uploads in progress
+# and PHP sessions (.php-tmp/sessions). Clear out anything older than a day.
+# Only this platform-owned directory: never the customer's own ~/tmp.
+- name: Clean the sites' temp directories daily
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/pressctl-sites.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed | default('Managed by pressctl') }}
+      e /sites/*/.php-tmp - - - 1d
+      # Its own line, so the sessions directory itself is never removed
+      # (an "e" line only cleans what is inside the directory).
+      e /sites/*/.php-tmp/sessions - - - 1d
+
+# cgi-fcgi lets pressctl-site-stats read each pool's status page from its socket.
+- name: Install the FastCGI client used to read PHP-FPM status
+  ansible.builtin.apt:
+    name: libfcgi-bin
+    state: present
+
+- name: Reload systemd after the PHP-FPM service changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: php_unit_result.changed and not ansible_check_mode
+
+- name: Restart PHP-FPM so the new settings apply
+  ansible.builtin.systemd:
+    name: "php{{ item }}-fpm"
+    state: restarted
+  loop: "{{ php_fpm_versions }}"
+  when: (php_ini_result.changed or php_unit_result.changed) and not ansible_check_mode

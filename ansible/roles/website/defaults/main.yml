@@ -4,7 +4,7 @@
 
 # PHP-FPM Pool Configuration (per-site settings)
 # Process manager mode: static, dynamic, or ondemand
-site_php_pm: "dynamic"
+site_php_pm: "ondemand"
 site_php_pm_max_children: 5
 site_php_pm_start_servers: 1
 site_php_pm_min_spare_servers: 1
@@ -22,6 +22,34 @@ wp_debug_display: false
 wordsail_connector_enabled: true
 wordsail_connector_url: "https://managed.wordsail.com/api/connector/v1/plugin/download/wordsail-connector-latest.zip"
 
+# Page cache (nginx FastCGI cache) for anonymous visitors. Logged-in users,
+# POSTs, query strings, wp-admin, carts and checkouts are never cached. Pages
+# can be up to this old after an edit, so keep it short. "0" turns it off.
+site_page_cache_ttl: "5m"
+# Disk space one site's page cache may use
+site_page_cache_max_size: "1g"
+
+# Longest a PHP request may run, wall clock (includes time waiting on the
+# database or remote HTTP calls, which max_execution_time does not count).
+# Follows php_max_execution_time (group_vars) so it never cuts below it.
+site_php_request_terminate_timeout: "{{ (php_max_execution_time | default(300) | int) + 30 }}s"
+# Requests slower than this get a PHP stack trace in the site's php-slow.log
+site_php_slowlog_timeout: "5s"
+
+# Most database connections one site may hold at once. The cap applied is the
+# larger of this and the site's PHP workers + 10 (one per worker, plus room for
+# wp-cron, WP-CLI and backups), so raising site_php_pm_max_children raises it.
+site_db_max_user_connections: 20
+
+# Redis object cache: each site gets its own Redis account (limited to its own
+# keys) on the sites' Redis, written into wp-config.php as WP_REDIS_* settings.
+site_redis_enabled: true
+# Install and switch on the Redis Object Cache plugin. Only new sites do this
+# by default; on existing sites the settings are written but nothing is
+# switched on (playbooks/harden_server.yml), since a site may run its own cache.
+site_redis_activate_plugin: true
+redis_sites_socket: /run/redis-sites/redis.sock
+
 # Cron Configuration
 # Use WordPress built-in cron (false) or system cron (true)
 wp_disable_cron: true
@@ -31,18 +59,33 @@ wp_cron_interval: "*/5"  # Every 5 minutes when using system cron
 site_dir_permissions: "0755"
 site_file_permissions: "0644"
 
-# Site tools (Tiny File Manager + Adminer) behind WordSail SSO
+# Site tools (elFinder file manager + Adminer) behind WordSail SSO
 # Set false to skip deploying the tools entirely
 site_tools_enabled: true
 
-# Root directory that Tiny File Manager manages (separate from WordPress uploads)
+# Root directory the file manager manages (the site's WordPress files)
 filemanager_root: "{{ site_home }}/files"
 
 # Panel SSO authority
 wordsail_sso_server: "managed.wordsail.com"
 
+# elFinder file manager. Installed once per server, root-owned, outside every
+# site directory (so site users never see it over SSH/SFTP); each site only
+# gets an SSO-guarded entry point. The clone is checked against the commit.
+elfinder_version: "2.1.70"
+elfinder_commit: "e7ea668fd569fc9903fb1c431d47d58f2daad2f2"
+elfinder_repo: "https://github.com/Studio-42/elFinder.git"
+elfinder_base: "/opt/pressctl/elfinder"
+elfinder_home: "{{ elfinder_base }}/{{ elfinder_version }}"
+
+# jQuery and jQuery UI for elFinder's browser UI (the versions elFinder targets)
+elfinder_jquery_version: "4.0.0"
+elfinder_jquery_url: "https://registry.npmjs.org/jquery/-/jquery-4.0.0.tgz"
+elfinder_jquery_sha256: "7ac123e4992439dc6a966cb4444fceb7f4698db94904a1256df542d5deb80f59"
+elfinder_jquery_ui_version: "1.14.2"
+elfinder_jquery_ui_url: "https://registry.npmjs.org/jquery-ui/-/jquery-ui-1.14.2.tgz"
+elfinder_jquery_ui_sha256: "8f021edc451532d858f438eff47780b646df4fb36d2a7232eedb35c38bc6a244"
+
 # Pinned tool downloads
-tinyfilemanager_url: "https://raw.githubusercontent.com/prasathmani/tinyfilemanager/2.6/tinyfilemanager.php"
-tinyfilemanager_sha256: "94677b427bf60e3ee0980b3136273f580b38776e4aae5a6388d9c1528a7e2fe1"
 adminer_url: "https://github.com/vrana/adminer/releases/download/v6.0.1/adminer-6.0.1.php"
 adminer_sha256: "1815c03f26e21d533e729c0b09bc69a59c902a6440409d013105ee679dff006c"

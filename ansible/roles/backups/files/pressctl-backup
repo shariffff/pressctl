@@ -130,6 +130,36 @@ def dump_tool():
     return shutil.which('mariadb-dump') or shutil.which('mysqldump') or 'mysqldump'
 
 
+# The sites' Redis (object cache). Each site's keys start with "<site id>:"
+# (WP_REDIS_PREFIX, see roles/website/tasks/redis.yml).
+REDIS_SOCKET = '/run/redis-sites/redis.sock'
+REDIS_ADMIN_PASS = '/etc/pressctl/redis/admin.pass'
+
+
+def flush_object_cache(site):
+    """Drop the site's object cache keys, so WordPress doesn't serve data cached
+    from the database that was just replaced. Returns False if they could not be
+    dropped (no sites' Redis on this server counts as done: nothing to drop)."""
+    if not os.path.exists(REDIS_SOCKET):
+        return True
+    try:
+        with open(REDIS_ADMIN_PASS) as f:
+            password = f.read().strip()
+    except OSError:
+        return False
+    env = dict(os.environ, REDISCLI_AUTH=password)
+    base = ['redis-cli', '-s', REDIS_SOCKET, '--user', 'pressctl-admin']
+    scan = run(base + ['--scan', '--pattern', site + ':*', '--count', '1000'], env=env)
+    if scan.returncode != 0:
+        return False
+    keys = [k for k in scan.stdout.splitlines() if k]
+    for i in range(0, len(keys), 500):
+        r = run(base + ['UNLINK'] + keys[i:i + 500], env=env)
+        if r.returncode != 0:
+            return False
+    return True
+
+
 def sql_tool():
     return shutil.which('mariadb') or shutil.which('mysql') or 'mysql'
 
@@ -343,7 +373,11 @@ def cmd_restore(args):
         finally:
             shutil.rmtree(tree, ignore_errors=True)
             shutil.rmtree(sqldir, ignore_errors=True)
-    print(json.dumps({'restored': args.set}))
+        cache_flushed = flush_object_cache(args.site)
+    if not cache_flushed:
+        print('Restored, but the site\'s object cache could not be cleared; '
+              'run `wp cache flush` as the site user', file=sys.stderr)
+    print(json.dumps({'restored': args.set, 'cache_flushed': cache_flushed}))
 
 
 SCHEDULE_DIR = os.path.join(STATE, 'scheduled')

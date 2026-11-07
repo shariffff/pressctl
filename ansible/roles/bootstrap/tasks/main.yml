@@ -71,6 +71,9 @@
     state: started
     enabled: true
 
+- name: Set up the sites' Redis (object caches)
+  ansible.builtin.import_tasks: redis_sites.yml
+
 - name: Create site-users group
   group:
     name: site-users

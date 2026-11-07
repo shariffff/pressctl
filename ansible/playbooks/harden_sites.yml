@@ -51,6 +51,7 @@
       ansible.builtin.file:
         path: "{{ item.path }}/files/wp-config.php"
         mode: "0640"
+        follow: false
       loop: "{{ site_dirs.files }}"
       loop_control:
         label: "{{ item.path }}"

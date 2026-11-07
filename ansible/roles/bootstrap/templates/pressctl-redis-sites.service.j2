@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Redis for the sites' object caches (pressctl)
+After=network.target
+
+[Service]
+Type=notify
+User=redis
+# The socket gets this group; every site user is a member.
+Group=redis-sites
+SupplementaryGroups=redis
+ExecStart=/usr/bin/redis-server /etc/redis/sites.conf
+RuntimeDirectory=redis-sites
+RuntimeDirectoryMode=0750
+StateDirectory=redis-sites
+StateDirectoryMode=0750
+Restart=always
+LimitNOFILE=65535
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+
+[Install]
+WantedBy=multi-user.target

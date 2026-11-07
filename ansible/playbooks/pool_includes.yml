@@ -31,6 +31,22 @@
         hidden: false
       register: site_dirs
 
+    # The settings point at the site's slow log directory and its PHP temp and
+    # session directories; PHP-FPM won't start without them.
+    - name: Create the directories each site's pool needs
+      ansible.builtin.include_role:
+        name: website
+        tasks_from: runtime_dirs.yml
+      vars:
+        domain: "{{ item.path | basename }}"
+        site_user: "{{ item.pw_name }}"
+        site_group: "{{ item.gr_name }}"
+        site_home: "{{ item.path }}"
+      loop: "{{ site_dirs.files }}"
+      loop_control:
+        label: "{{ item.pw_name }}"
+      when: item.pw_name != 'root'
+
     - name: Write each site's pool settings
       ansible.builtin.template:
         src: ../roles/website/templates/pressctl-pool.conf.j2

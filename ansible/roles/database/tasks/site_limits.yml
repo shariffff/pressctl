@@ -1,0 +1,23 @@
+---
+# Cap the database connections of every existing site user, so one busy or
+# broken site can't use up max_connections for all the others. Users that
+# already have their own cap are left alone. Used by playbooks/harden_server.yml
+# (new sites get the cap when their user is created). Safe to re-run.
+- name: Cap each site's database connections
+  ansible.builtin.shell: |
+    set -eu
+    mysql --defaults-file=/root/.my.cnf -N -B -e "
+      SELECT CONCAT('ALTER USER ', QUOTE(User), '@', QUOTE(Host),
+                    ' WITH MAX_USER_CONNECTIONS {{ site_db_max_user_connections | default(20) | int }};')
+      FROM mysql.user
+      WHERE max_user_connections = 0
+        AND User NOT IN ('root', 'pressctlbot', 'mysql', 'mariadb.sys', 'debian-sys-maint', 'healthcheck', '')
+        AND Host = 'localhost'" > /root/.pressctl-db-limits.sql
+    if [ -s /root/.pressctl-db-limits.sql ]; then
+      mysql --defaults-file=/root/.my.cnf < /root/.pressctl-db-limits.sql
+      echo "capped $(wc -l < /root/.pressctl-db-limits.sql) users"
+    fi
+    rm -f /root/.pressctl-db-limits.sql
+  register: db_site_limits
+  changed_when: "'capped' in db_site_limits.stdout"
+  when: not ansible_check_mode

@@ -29,13 +29,32 @@
     state: absent
   tags: add_domain
 
-- name: Ensure site logs directory exists
+# /sites is root-owned, so root may look at the site's home; anything inside
+# it belongs to the site user and is created as that user (root following a
+# link the user left at ~/logs would hand them whatever it points at).
+- name: Check for the site's home
+  ansible.builtin.stat:
+    path: "/sites/{{ domain }}"
+    follow: false
+  register: add_domain_site_home
+  tags: add_domain
+
+- name: Ensure site logs directory exists (PHP's own error log)
+  become_user: "{{ site_id if add_domain_site_home.stat.exists else 'root' }}"
   ansible.builtin.file:
     path: "/sites/{{ domain }}/logs"
     state: directory
     owner: "{{ site_id }}"
     group: "{{ site_id }}"
     mode: "0755"
+    follow: false
+  tags: add_domain
+
+- name: Set up the site's web log directory and log format
+  ansible.builtin.import_tasks: site_web_logs.yml
+  vars:
+    site_log_domain: "{{ domain }}"
+    site_log_group: "{{ site_id }}"
   tags: add_domain
 
 - name: Deploy main site config

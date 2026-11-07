@@ -2,20 +2,61 @@
 # Tenant isolation: the site home is private to its own user. nginx (www-data)
 # only gets traverse access, so it can serve files but other sites' users and
 # PHP processes cannot list or read this site (wp-config.php holds DB creds).
-- name: Ensure site directories exist
+# The home itself sits in root-owned /sites, so root can set it up safely.
+- name: Ensure the site directory exists
+  ansible.builtin.file:
+    path: "{{ site_home }}"
+    state: directory
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0750"
+    follow: false
+
+# Everything inside the home belongs to the site user, who (or whose PHP) can
+# replace any of it with a link, including parent directories such as ~/.local
+# or ~/.php-tmp. Root following such a link would hand a system directory to the
+# user. So these are created as the site user: a link can only lead them to
+# what they could already change.
+- name: Ensure the site's own directories exist
+  become_user: "{{ site_user }}"
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
     mode: "{{ item.mode }}"
+    follow: false
   loop:
-    - { path: "{{ site_home }}", mode: "0750" }
     - { path: "{{ site_home }}/files", mode: "0755" }
     - { path: "{{ site_home }}/logs", mode: "0755" }
     - { path: "{{ site_home }}/.local/bin", mode: "0755" }
     - { path: "{{ site_home }}/.ssh", mode: "0700" }
     - { path: "{{ site_home }}/.wp-cli", mode: "0755" }
+
+- name: Ensure the directories the site's PHP pool needs exist
+  ansible.builtin.include_tasks: runtime_dirs.yml
+
+# The site's own logs (PHP's debug.log) stay in ~/logs and are rotated as the
+# site user, so logrotate never works as root inside a directory the user owns.
+- name: Rotate the site's own logs as the site user
+  ansible.builtin.copy:
+    dest: "/etc/logrotate.d/pressctl-site-{{ domain }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed | default('Managed by pressctl') }}
+      {{ site_home }}/logs/*.log {
+          su {{ site_user }} {{ site_group }}
+          weekly
+          rotate 4
+          maxsize 50M
+          missingok
+          notifempty
+          compress
+          delaycompress
+          copytruncate
+      }
 
 - name: Let the web server traverse the site directory
   ansible.posix.acl:
@@ -26,6 +67,7 @@
     state: present
 
 - name: Symlink PHP binary
+  become_user: "{{ site_user }}"
   ansible.builtin.file:
     src: "/usr/bin/php{{ php_version }}"
     dest: "{{ site_home }}/.local/bin/php"

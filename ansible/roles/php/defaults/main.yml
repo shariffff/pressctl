@@ -1,2 +1,11 @@
 ---
-# All defaults are defined in group_vars/all.yml
+# Most PHP settings live in group_vars/all.yml. These sit with the role so the
+# playbooks under playbooks/ (which don't load group_vars) get them too.
+
+# OPcache is one cache shared by every site of a PHP version, and every site
+# has its own copy of WordPress, so it needs far more room than PHP's 128 MB.
+php_opcache_memory_mb: 512
+php_opcache_interned_strings_mb: 64
+php_opcache_max_files: 100000
+# Seconds between checks for changed files (edits over SFTP show up after this)
+php_opcache_revalidate_freq: 10

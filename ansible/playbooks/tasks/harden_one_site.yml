@@ -1,0 +1,21 @@
+---
+# One site of playbooks/harden_server.yml. The site's id is the owner of
+# /sites/<domain> (and its PHP-FPM pool's name); its PHP version is where the
+# pool lives.
+- name: "Harden {{ harden_site.path | basename }}"
+  ansible.builtin.include_role:
+    name: website
+    tasks_from: "{{ harden_task }}"
+  vars:
+    domain: "{{ harden_site.path | basename }}"
+    site_id: "{{ harden_site.pw_name }}"
+    site_user: "{{ harden_site.pw_name }}"
+    site_group: "{{ harden_site.gr_name }}"
+    site_home: "{{ harden_site.path }}"
+    php_version: "{{ harden_pool_versions[harden_site.pw_name] }}"
+    pressctl_defer_reload: true
+    # Existing sites get the Redis settings, but their cache plugin choice is theirs.
+    site_redis_activate_plugin: false
+  loop: [files.yml, cron.yml, hardening.yml]
+  loop_control:
+    loop_var: harden_task

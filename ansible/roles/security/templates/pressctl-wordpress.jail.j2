@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# Bans addresses that keep failing WordPress logins on any site. New sites'
+# logs are picked up when the site is created (fail2ban-client reload).
+# Visitors that come through Cloudflare can't be blocked by the firewall (the
+# connection is Cloudflare's); nginx's login rate limit still applies to them.
+[pressctl-wordpress]
+enabled = true
+port = http,https
+filter = pressctl-wordpress
+backend = polling
+logpath = /var/log/nginx/access.log
+          /var/log/pressctl/sites/*/access.log
+maxretry = {{ wp_fail2ban_maxretry }}
+findtime = {{ wp_fail2ban_findtime }}
+bantime = {{ wp_fail2ban_bantime }}
+bantime.increment = true
+bantime.maxtime = 1w

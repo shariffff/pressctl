@@ -79,6 +79,11 @@
         state: absent
       notify: Reload nginx
 
+    - name: Remove the pool settings file
+      ansible.builtin.file:
+        path: '/etc/pressctl/pool-includes/{{ site_id }}.conf'
+        state: absent
+
     - name: Remove PHP-FPM pool configuration
       ansible.builtin.file:
         path: '/etc/php/{{ php_version | default("8.3") }}/fpm/pool.d/{{ site_id }}.conf'
@@ -89,6 +94,37 @@
         name: php{{ php_version | default('8.3') }}-fpm
         state: reloaded
       changed_when: true
+
+    - name: Remove the site's web logs, log rotation and page cache
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: absent
+      loop:
+        - '/var/log/pressctl/sites/{{ site_domain }}'
+        - '/etc/logrotate.d/pressctl-site-{{ site_domain }}'
+        - '/cache/{{ site_domain }}'
+
+    - name: Remove the site's Redis account
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: absent
+      loop:
+        - '/etc/pressctl/redis/users.d/{{ site_id }}.acl'
+        - '/etc/pressctl/redis/{{ site_id }}.pass'
+      register: site_redis_removed
+
+    - name: Reload the Redis accounts without the site
+      ansible.builtin.shell: |
+        set -eu
+        [ -d /etc/pressctl/redis/users.d ] || exit 0
+        umask 027
+        cat /etc/pressctl/redis/users.d/*.acl > /etc/redis/sites-users.acl.new
+        chgrp redis /etc/redis/sites-users.acl.new
+        mv /etc/redis/sites-users.acl.new /etc/redis/sites-users.acl
+        REDISCLI_AUTH="$(cat /etc/pressctl/redis/admin.pass)" \
+          redis-cli -s /run/redis-sites/redis.sock --user pressctl-admin ACL LOAD
+      when: site_redis_removed.changed
+      no_log: true
 
     - name: Remove site user
       ansible.builtin.user:

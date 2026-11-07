@@ -1,0 +1,100 @@
+---
+# A separate Redis for the sites' object caches. Reached only through a unix
+# socket by members of the redis-sites group (the site users). The default
+# user is off; each site logs in as its own Redis user, limited to its own
+# keys (roles/website/tasks/redis.yml). Imported by main.yml and applied to
+# existing servers by playbooks/harden_server.yml. Safe to re-run.
+- name: Install Redis
+  ansible.builtin.apt:
+    name: redis-server
+    state: present
+
+- name: Create the redis-sites group
+  ansible.builtin.group:
+    name: redis-sites
+    state: present
+    system: true
+
+- name: Create the Redis account directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/pressctl
+    - /etc/pressctl/redis
+    - /etc/pressctl/redis/users.d
+
+- name: Create the Redis admin password
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    f=/etc/pressctl/redis/admin.pass
+    [ -s "$f" ] && exit 0
+    openssl rand -hex 32 > "$f"
+    echo created
+  register: redis_admin_pass_created
+  changed_when: "'created' in redis_admin_pass_created.stdout"
+
+- name: Read the Redis admin password
+  ansible.builtin.slurp:
+    src: /etc/pressctl/redis/admin.pass
+  register: redis_admin_pass
+  no_log: true
+
+# Redis ACL files can't hold comments, so each account is its own fragment.
+- name: Write the base Redis accounts
+  ansible.builtin.copy:
+    dest: /etc/pressctl/redis/users.d/00-base.acl
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      user default off resetkeys resetchannels -@all
+      user pressctl-admin on #{{ redis_admin_pass.content | b64decode | trim | hash('sha256') }} ~* &* +@all
+  no_log: true
+
+- name: Assemble the Redis account file
+  ansible.builtin.assemble:
+    src: /etc/pressctl/redis/users.d
+    dest: /etc/redis/sites-users.acl
+    regexp: '\.acl$'
+    owner: root
+    group: redis
+    mode: "0640"
+  register: redis_sites_acl
+
+- name: Configure the sites' Redis
+  ansible.builtin.template:
+    src: redis-sites.conf.j2
+    dest: /etc/redis/sites.conf
+    owner: root
+    group: redis
+    mode: "0640"
+  register: redis_sites_conf
+
+- name: Install the sites' Redis service
+  ansible.builtin.template:
+    src: pressctl-redis-sites.service.j2
+    dest: /etc/systemd/system/pressctl-redis-sites.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: redis_sites_unit
+
+- name: Start the sites' Redis
+  ansible.builtin.systemd:
+    name: pressctl-redis-sites
+    state: "{{ 'restarted' if (redis_sites_conf.changed or redis_sites_unit.changed) else 'started' }}"
+    enabled: true
+    daemon_reload: "{{ redis_sites_unit.changed }}"
+  when: not ansible_check_mode
+
+- name: Load the Redis accounts
+  ansible.builtin.command: redis-cli -s {{ redis_sites_socket }} --user pressctl-admin ACL LOAD
+  environment:
+    REDISCLI_AUTH: "{{ redis_admin_pass.content | b64decode | trim }}"
+  when: redis_sites_acl.changed and not (redis_sites_conf.changed or redis_sites_unit.changed) and not ansible_check_mode
+  no_log: true

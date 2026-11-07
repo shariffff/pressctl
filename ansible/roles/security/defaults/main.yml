@@ -1,2 +1,22 @@
 ---
-# All defaults are defined in group_vars/all.yml
+# Most defaults are in group_vars/all.yml. These sit with the role so the
+# playbooks under playbooks/ (which don't load group_vars) get them too.
+
+# fail2ban: ban an address after this many failed WordPress logins (or
+# rate-limited login/XML-RPC requests) within findtime.
+wp_fail2ban_maxretry: 10
+wp_fail2ban_findtime: "10m"
+wp_fail2ban_bantime: "1h"
+
+# Automatic security updates. Reboots (for kernel updates) only if enabled.
+unattended_upgrades_reboot: false
+unattended_upgrades_reboot_time: "04:00"
+# Also take updates from the PHP and nginx repositories pressctl adds.
+unattended_upgrades_extra_origins:
+  - "origin=LP-PPA-ondrej-php"
+  - "origin=nginx"
+
+# Weekly ClamAV scan of /sites (needs ~1 GB RAM while it runs). Off by default.
+malware_scan_enabled: false
+malware_scan_weekday: 0
+malware_scan_hour: 3

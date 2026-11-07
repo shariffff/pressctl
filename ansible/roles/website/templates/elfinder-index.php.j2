@@ -1,0 +1,122 @@
+<?php
+/**
+ * {{ ansible_managed }}
+ *
+ * WordSail SSO-guarded entry point for the elFinder file manager.
+ *
+ * Every request (the page itself, every connector call, every upload and
+ * download) comes through this file and the SSO guard. A GET without `cmd`
+ * returns the page; anything else is handed to elFinder's connector.
+ *
+ * elFinder's code is shared by every site and lives root-owned in
+ * {{ elfinder_home }}; its browser files are served by nginx under
+ * /filemanager/assets/. Nothing in this site's web root belongs to elFinder.
+ */
+
+require dirname(__DIR__) . '/sso-guard.php';
+wordsail_tool_sso_guard('filemanager');
+
+// Never let proxies or browsers cache file listings or downloads.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-Frame-Options: SAMEORIGIN');
+header('Referrer-Policy: no-referrer');
+
+const WORDSAIL_ELFINDER_HOME = '{{ elfinder_home }}';
+const WORDSAIL_ELFINDER_ROOT = '{{ filemanager_root }}';
+const WORDSAIL_ELFINDER_TEMP = __DIR__ . '/.tmp';
+
+if (isset($_GET['cmd']) || ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    wordsail_elfinder_connector();
+    exit;
+}
+
+/**
+ * Hide dot-files (.htaccess, .user.ini, .git, ...) like the old file manager
+ * did: not listed, not readable, not writable. Returning null leaves every
+ * other path to the volume's defaults.
+ */
+function wordsail_elfinder_access($attr, $path, $data, $volume, $isDir, $relpath)
+{
+    $basename = basename($path);
+    if ($basename !== '' && $basename[0] === '.' && strlen($relpath) !== 1) {
+        return !($attr === 'read' || $attr === 'write');
+    }
+    return null;
+}
+
+function wordsail_elfinder_connector(): void
+{
+    require WORDSAIL_ELFINDER_HOME . '/php/autoload.php';
+
+    // No network volumes (Dropbox, FTP, ...): only this site's own files.
+    elFinder::$netDrivers = array();
+
+    $opts = array(
+        // Temporary files (uploads in progress, zip downloads) stay out of
+        // the web root, in this site's private tools directory.
+        'commonTempPath' => WORDSAIL_ELFINDER_TEMP,
+        'uploadTempPath' => WORDSAIL_ELFINDER_TEMP,
+        'roots' => array(
+            array(
+                'driver' => 'LocalFileSystem',
+                'path' => WORDSAIL_ELFINDER_ROOT,
+                'alias' => '{{ domain }}',
+                // No direct URLs: files are opened and downloaded through this
+                // guarded connector, so PHP files are never run by "opening" them.
+                'URL' => '',
+                // Thumbnails are drawn in the browser, nothing is stored on disk.
+                'tmbPath' => '',
+                'tmbURL' => 'self',
+                'tmpPath' => WORDSAIL_ELFINDER_TEMP,
+                'quarantine' => WORDSAIL_ELFINDER_TEMP,
+                // Archive create/extract has been elFinder's weakest point;
+                // folders can still be downloaded as a zip.
+                'disabled' => array('archive', 'extract', 'netmount'),
+                'accessControl' => 'wordsail_elfinder_access',
+                'winHashFix' => false,
+            ),
+        ),
+    );
+
+    $connector = new elFinderConnector(new elFinder($opts));
+    $connector->run();
+}
+
+$assets = '/filemanager/assets';
+$v = '?v={{ elfinder_version }}';
+?><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Files &middot; {{ domain }}</title>
+    <link rel="stylesheet" href="<?= $assets ?>/jquery-ui/themes/smoothness/jquery-ui.min.css<?= $v ?>">
+    <link rel="stylesheet" href="<?= $assets ?>/elfinder/css/elfinder.min.css<?= $v ?>">
+    <link rel="stylesheet" href="<?= $assets ?>/elfinder/css/theme.css<?= $v ?>">
+    <style>html, body { margin: 0; height: 100%; } #elfinder { height: 100%; border: 0; border-radius: 0; }</style>
+    <script src="<?= $assets ?>/jquery/jquery.min.js<?= $v ?>"></script>
+    <script src="<?= $assets ?>/jquery-ui/jquery-ui.min.js<?= $v ?>"></script>
+    <script src="<?= $assets ?>/elfinder/js/elfinder.min.js<?= $v ?>"></script>
+</head>
+<body>
+<div id="elfinder"></div>
+<script>
+$(function () {
+    $('#elfinder').elfinder({
+        url: '/filemanager/index.php',
+        baseUrl: '<?= $assets ?>/elfinder/',
+        cssAutoLoad: false,
+        lang: 'en',
+        height: '100%',
+        resizable: false,
+        rememberLastDir: true
+    });
+    $(window).on('resize', function () {
+        $('#elfinder').elfinder('instance').resize('100%', $(window).height());
+    });
+});
+</script>
+</body>
+</html>

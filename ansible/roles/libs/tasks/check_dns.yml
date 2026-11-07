@@ -32,8 +32,8 @@
 
 - name: Set DNS match facts
   ansible.builtin.set_fact:
-    dns_matches_server: "{{ (dns_lookup.stdout_lines | first | default('')) == server_public_ip.content }}"
-    domain_resolved_ip: "{{ dns_lookup.stdout_lines | first | default('not resolved') }}"
+    dns_matches_server: "{{ (dns_lookup.stdout_lines | last | default('')) == server_public_ip.content }}"
+    domain_resolved_ip: "{{ dns_lookup.stdout_lines | last | default('not resolved') }}"
     server_ip: "{{ server_public_ip.content }}"
   tags: check_dns
 

@@ -1,0 +1,98 @@
+#!/bin/bash
+# Login shell for site owners (installed by the pressctl security role).
+#
+# sshd starts this for every SSH, SFTP, scp and rsync session of a site user.
+# It puts the session in a bubblewrap sandbox that can see the system programs
+# (read-only), a private /tmp, and ONLY the site's own directory. Nothing else on the
+# server is visible: no /etc/nginx, no other sites, no /root, no other processes.
+# Inside the site directory, the panel's tools folder (~/tools) is hidden too.
+#
+# Interactive logins get a login bash; commands (`-c ...`, which is how sshd
+# runs sftp-server, scp and rsync) are passed to bash unchanged.
+set -u
+
+user=$(id -un)
+home=$(getent passwd "$user" | cut -d: -f6)
+group=$(id -gn)
+
+if [ -z "$home" ] || [ ! -d "$home" ] || [ ! -x /usr/bin/bwrap ]; then
+    echo "This account isn't ready for sign-in yet. Please contact support." >&2
+    exit 1
+fi
+
+args=(
+    --unshare-user --disable-userns
+    --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup-try
+    --die-with-parent --cap-drop ALL
+    --hostname site
+
+    # Programs and libraries, read-only (usr-merged layout).
+    --ro-bind /usr /usr
+    --symlink usr/bin /bin --symlink usr/sbin /sbin
+    --symlink usr/lib /lib --symlink usr/lib64 /lib64
+
+    --proc /proc --dev /dev
+    --tmpfs /tmp --tmpfs /var/tmp
+
+    # A minimal /etc: only what ordinary tools need to run and reach the network.
+    --ro-bind-data 8 /etc/passwd
+    --ro-bind-data 9 /etc/group
+)
+for f in ld.so.cache ld.so.conf ld.so.conf.d alternatives resolv.conf hosts nsswitch.conf \
+         localtime timezone ssl ca-certificates ca-certificates.conf terminfo \
+         profile profile.d bash.bashrc inputrc environment vim gitconfig mime.types; do
+    [ -e "/etc/$f" ] && args+=(--ro-bind "/etc/$f" "/etc/$f")
+done
+
+# PHP's command-line settings only: /etc/php/*/fpm/pool.d would list every site on the server.
+for v in /etc/php/*/; do
+    for part in cli mods-available; do
+        [ -d "$v$part" ] && args+=(--ro-bind "$v$part" "$v$part")
+    done
+done
+
+# The database socket, so wp-cli and the mysql client can reach MariaDB.
+# PHP's default MySQL socket is /var/run/mysqld/mysqld.sock, and /var/run is a link to /run
+[ -S /run/mysqld/mysqld.sock ] && args+=(--ro-bind /run/mysqld /run/mysqld --symlink ../run /var/run)
+
+args+=(
+    --bind "$home" "$home"
+)
+
+# The panel's site tools (SSO guard and its cookie secret, Adminer and its DB
+# credentials, the file manager's entry point) live in ~/tools and run as the site user, but
+# they are ours, not the customer's. Cover the folder with an empty, read-only,
+# mode-000 tmpfs so SSH/SFTP/scp/rsync sessions can neither list, read, change,
+# rename nor delete it. PHP-FPM, outside the sandbox, still sees the real files.
+[ -d "$home/tools" ] && args+=(--perms 0000 --tmpfs "$home/tools" --remount-ro "$home/tools")
+
+# The site's web logs (nginx access/error, PHP slow log) are written by root
+# outside the home, so they can't be tampered with. Show them read-only in
+# ~/logs/server. Skipped if the user put something other than a directory there.
+weblogs=/var/log/pressctl/sites/${home##*/}
+dest=$home/logs/server
+if [ -d "$weblogs" ] && { [ ! -e "$dest" ] || { [ -d "$dest" ] && [ ! -L "$dest" ]; }; }; then
+    args+=(--ro-bind "$weblogs" "$dest")
+fi
+
+# The sites' Redis (object cache) socket, so wp-cli sees the same cache as the site.
+[ -d /run/redis-sites ] && args+=(--ro-bind /run/redis-sites /run/redis-sites)
+
+args+=(
+    --chdir "$home"
+    --clearenv
+    --setenv HOME "$home" --setenv USER "$user" --setenv LOGNAME "$user"
+    --setenv SHELL /bin/bash
+    --setenv PATH "$home/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    --setenv TERM "${TERM:-xterm}" --setenv LANG "${LANG:-C.UTF-8}"
+)
+
+if [ $# -eq 0 ]; then
+    set -- /bin/bash -l
+else
+    set -- /bin/bash "$@"
+fi
+
+exec /usr/bin/bwrap "${args[@]}" "$@" \
+    8< <(getent passwd root nobody "$user") \
+    9< <(getent group root nogroup "$group")

@@ -187,7 +187,7 @@ func extractTarGz(src, dest string) error {
 		}
 
 		// Zip-slip protection: clean the path before joining.
-		target := filepath.Join(cleanDest, filepath.Clean("/"+hdr.Name)[1:])
+		target := filepath.Join(cleanDest, filepath.Clean("/" + hdr.Name)[1:])
 		if target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid path in archive: %s", hdr.Name)
 		}

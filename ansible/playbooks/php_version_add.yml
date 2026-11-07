@@ -1,0 +1,94 @@
+---
+# Install an additional PHP version on an existing server.
+#
+# This playbook installs a new PHP version (e.g. 8.4) alongside the server's
+# default PHP version so sites can be migrated to it later via
+# `press site php-version` (playbooks/php_version_change.yml).
+#
+# Required variables (pass via --extra-vars):
+#   php_version   PHP version to install (e.g. 8.4)
+- name: Add PHP Version to Server
+  hosts: webservers
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - php_version is defined and php_version | length > 0
+        fail_msg: |
+          Required variable missing: php_version
+          Pass it via --extra-vars (e.g. php_version=8.4)
+
+  tasks:
+    - name: Add PHP repository (ondrej/php PPA)
+      ansible.builtin.apt_repository:
+        repo: ppa:ondrej/php
+        state: present
+      register: add_repository
+      until: add_repository is success
+      retries: 3
+      delay: 5
+
+    - name: Compute PHP {{ php_version }} package list
+      ansible.builtin.set_fact:
+        php_install_packages: "{{ (php_extensions | reject('equalto', 'opcache') | list if php_version in (php_opcache_bundled_versions | default([])) else php_extensions) | map('regex_replace', '^(.*)$', 'php' ~ php_version ~ '-\\1') | list + ['libpcre2-8-0'] }}"
+
+    - name: Install PHP {{ php_version }} and extensions
+      ansible.builtin.apt:
+        name: "{{ php_install_packages }}"
+        state: present
+        update_cache: "{{ add_repository.changed }}"
+      register: php_install
+      until: php_install is success
+      retries: 3
+      delay: 5
+
+    - name: Configure PHP settings for {{ php_version }}
+      ansible.builtin.lineinfile:
+        path: "/etc/php/{{ php_version }}/fpm/php.ini"
+        regexp: "^;?{{ item.key }}"
+        line: "{{ item.key }} = {{ item.value }}"
+        state: present
+      loop:
+        - { key: upload_max_filesize, value: "{{ php_upload_max_filesize | default('64M') }}" }
+        - { key: post_max_size, value: "{{ php_post_max_size | default('64M') }}" }
+        - { key: memory_limit, value: "{{ php_memory_limit | default('256M') }}" }
+        - { key: max_execution_time, value: "{{ php_max_execution_time | default(300) }}" }
+        - { key: max_input_vars, value: "{{ php_max_input_vars | default(3000) }}" }
+
+    - name: Configure PHP disabled functions for {{ php_version }}
+      ansible.builtin.lineinfile:
+        path: "/etc/php/{{ php_version }}/fpm/php.ini"
+        regexp: "^;?disable_functions"
+        line: "disable_functions = {{ php_disabled_functions | join(',') }}"
+        state: present
+
+    - name: Configure PHP-FPM default pool process manager for {{ php_version }}
+      ansible.builtin.lineinfile:
+        path: "/etc/php/{{ php_version }}/fpm/pool.d/www.conf"
+        regexp: "^pm ="
+        line: "pm = {{ php_fpm_pm }}"
+        state: present
+
+    - name: Configure ImageMagick PDF policy
+      ansible.builtin.lineinfile:
+        path: /etc/ImageMagick-6/policy.xml
+        regexp: '<policy\s+domain="coder"\s+rights="none"\s+pattern="PDF"\s+/>'
+        line: '  <policy domain="coder" rights="{{ imagemagick_pdf_policy }}" pattern="PDF" />'
+        state: present
+        backrefs: true
+
+    - name: Enable and start php{{ php_version }}-fpm
+      ansible.builtin.systemd:
+        name: "php{{ php_version }}-fpm"
+        enabled: true
+        state: started
+
+    - name: Confirm PHP {{ php_version }} binary is available
+      ansible.builtin.command:
+        cmd: "php{{ php_version }} -v"
+      changed_when: false

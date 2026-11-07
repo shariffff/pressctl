@@ -1,0 +1,73 @@
+---
+# Kopia backups for the sites on a server (see files/pressctl-backup).
+- name: Add the Kopia signing key
+  ansible.builtin.get_url:
+    url: https://kopia.io/signing-key
+    dest: /etc/apt/keyrings/kopia-keyring.asc
+    mode: "0644"
+
+- name: Add the Kopia package source
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kopia-keyring.asc] http://packages.kopia.io/apt/ stable main"
+    filename: kopia
+    state: present
+
+- name: Install Kopia and the tools the backup script uses
+  ansible.builtin.apt:
+    name: [kopia, rsync, python3]
+    state: present
+    update_cache: true
+
+- name: Create the backup configuration and state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: [/etc/pressctl, /var/backups/pressctl]
+
+- name: Write the repository settings (root only)
+  ansible.builtin.template:
+    src: kopia.env.j2
+    dest: /etc/pressctl/kopia.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install the backup script
+  ansible.builtin.copy:
+    src: pressctl-backup
+    dest: /usr/local/sbin/pressctl-backup
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Connect to (or create) the repository and set the retention policy
+  ansible.builtin.command: /usr/local/sbin/pressctl-backup setup
+  register: backup_setup
+  changed_when: "'created the repository' in backup_setup.stdout"
+
+- name: Schedule the nightly backup and weekly maintenance
+  ansible.builtin.template:
+    src: pressctl-backup.cron.j2
+    dest: /etc/cron.d/pressctl-backup
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Rotate the backup log
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/pressctl-backup
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      /var/log/pressctl-backup.log {
+          weekly
+          rotate 8
+          compress
+          missingok
+          notifempty
+      }

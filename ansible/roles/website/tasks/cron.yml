@@ -1,9 +1,24 @@
 ---
+# WordPress cron, run by the system every 5 minutes.
+#
+# The job runs the site's own code, so it runs in the same sandbox as the
+# site owner's SSH logins (/usr/local/bin/pressctl-shell): without it, a plugin
+# could use the command-line PHP (which allows exec) to look at the whole server.
+#
+# Each site gets its own minute within the 5 (from a hash of its id), so a
+# server with many sites doesn't start every site's cron at the same moment.
+- name: Pick this site's cron minute
+  ansible.builtin.set_fact:
+    wp_cron_minutes: >-
+      {{ range(((site_user | hash('md5'))[:8] | int(base=16)) % 5, 60, 5) | join(',') }}
+
 - name: Ensure cron job for wp-cron
   ansible.builtin.cron:
     name: "wp-cron-{{ domain }}"
-    minute: "2,7,12,17,22,27,32,37,42,47,52,57"
-    job: "cd {{ site_home }}/files/; flock -n ~/.wp_cron.lock /usr/local/bin/wp cron event run --due-now --quiet"
+    minute: "{{ wp_cron_minutes }}"
+    job: >-
+      /usr/local/bin/pressctl-shell -c
+      'cd ~/files && flock -n ~/.wp_cron.lock wp cron event run --due-now --quiet'
     user: "{{ site_user }}"
     state: present
 

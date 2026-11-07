@@ -20,6 +20,11 @@ mysql_pressctlbot_password: ''
 # Changing this after provisioning requires re-running the php role
 php_version: "8.3"
 
+# PHP versions where OPcache is compiled into the PHP core and there is no
+# separate phpX.Y-opcache package (PHP 8.5+). Kept in sync with ondrej/php PPA.
+php_opcache_bundled_versions:
+  - "8.5"
+
 # Server timezone — must be a valid tz database name (e.g. "America/New_York", "Europe/London")
 # Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 server_timezone: "UTC"
@@ -51,9 +56,18 @@ php_install_wpcli: true
 # DATABASE
 # ─────────────────────────────────────────────────────────────────────────────
 
-# InnoDB buffer pool — aim for 50–70% of total RAM on dedicated DB servers
-mariadb_innodb_buffer_pool_size: "256M"
-mariadb_max_connections: 100
+# InnoDB buffer pool — "auto" uses mariadb_innodb_buffer_pool_ratio of the
+# server's RAM (the database shares the server with PHP and nginx). Use a fixed
+# size like "2G" instead if you prefer; 50–70% of RAM on a dedicated DB server.
+mariadb_innodb_buffer_pool_size: "auto"
+mariadb_innodb_buffer_pool_ratio: 0.25
+# Keep this above the sum of every site's PHP workers (site_php_pm_max_children).
+# Each site is also capped at site_db_max_user_connections (roles/website/defaults).
+mariadb_max_connections: 300
+# Many sites means many tables
+mariadb_table_open_cache: 8000
+mariadb_table_definition_cache: 4000
+mariadb_open_files_limit: 65535
 
 # Disable performance_schema to reduce memory usage on small VPS
 mariadb_performance_schema: false
@@ -69,9 +83,10 @@ mariadb_collation: "utf8mb4_unicode_ci"
 # Query cache (deprecated in MySQL 8.0, but still available in MariaDB)
 mariadb_query_cache_size: "0"
 
-# Slow query log (useful for debugging, disable in production)
-mariadb_slow_query_log: false
-mariadb_long_query_time: 2
+# Slow query log: queries slower than mariadb_long_query_time seconds, with the
+# database user (= the site). pressctl-site-stats summarises it per site.
+mariadb_slow_query_log: true
+mariadb_long_query_time: 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────

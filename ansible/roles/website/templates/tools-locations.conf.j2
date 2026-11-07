@@ -1,0 +1,50 @@
+# {{ ansible_managed }}
+# WordSail site tools: Adminer and the elFinder file manager.
+#
+# These tools live OUTSIDE the web root under {{ site_home }}/tools and are
+# reached only via these location blocks, each gated by the shared SSO guard.
+# The ^~ prefix ensures these win over the generic \.php$ regex handler.
+
+# --- Adminer at /adminer.php ---
+location = /adminer.php {
+    # Restrict to the SSO entry point only.
+    include fastcgi.conf;
+    fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/adminer.php;
+    fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
+}
+
+# --- elFinder file manager at /filemanager/ ---
+# Only two things are reachable here: the SSO-guarded entry point (which also
+# serves elFinder's connector) and elFinder's static browser files. Everything
+# else under /filemanager/ is a 404, including the tool's private .tmp dir.
+location ^~ /filemanager/ {
+    location = /filemanager/ {
+        include fastcgi.conf;
+        fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/filemanager/index.php;
+        fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
+    }
+
+    location = /filemanager/index.php {
+        include fastcgi.conf;
+        fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/filemanager/index.php;
+        fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
+    }
+
+    # elFinder's own CSS, JS, images and sounds (shared, root-owned, no PHP).
+    location ~ ^/filemanager/assets/elfinder/((?:css|js|img|sounds)/[^/].*)$ {
+        alias {{ elfinder_home }}/$1;
+        expires 7d;
+    }
+
+    location ~ ^/filemanager/assets/jquery/(.+)$ {
+        alias {{ elfinder_base }}/vendor/jquery-{{ elfinder_jquery_version }}/dist/$1;
+        expires 7d;
+    }
+
+    location ~ ^/filemanager/assets/jquery-ui/(.+)$ {
+        alias {{ elfinder_base }}/vendor/jquery-ui-{{ elfinder_jquery_ui_version }}/dist/$1;
+        expires 7d;
+    }
+
+    return 404;
+}

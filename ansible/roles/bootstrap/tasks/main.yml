@@ -71,16 +71,19 @@
     state: started
     enabled: true
 
+- name: Set up the sites' Redis (object caches)
+  ansible.builtin.import_tasks: redis_sites.yml
+
 - name: Create site-users group
   group:
     name: site-users
     state: present
 
-- name: Create sites directory
+- name: Create sites directory (traverse-only, so sites cannot list each other)
   ansible.builtin.file:
     path: /sites
     state: directory
-    mode: '0755'
+    mode: '0711'
 
 - name: Remove ACL for site-users on /home
   acl:

@@ -21,6 +21,7 @@ type Server struct {
 	SSH           SSHConfig         `yaml:"ssh"`
 	Credentials   ServerCredentials `yaml:"credentials,omitempty"`
 	PHPVersion    string            `yaml:"php_version,omitempty"`
+	PHPVersions   []string          `yaml:"php_versions,omitempty"`
 	Status        string            `yaml:"status" validate:"oneof=provisioned unprovisioned error"`
 	ProvisionedAt *time.Time        `yaml:"provisioned_at,omitempty"`
 	Sites         []Site            `yaml:"sites,omitempty"`
@@ -40,4 +41,33 @@ func IsValidPHPVersion(version string) bool {
 		}
 	}
 	return false
+}
+
+// HasPHPVersion reports whether the given PHP version is installed on the
+// server. The server's default PHPVersion is always considered installed.
+func (s *Server) HasPHPVersion(version string) bool {
+	if s.PHPVersion == version {
+		return true
+	}
+	for _, v := range s.PHPVersions {
+		if v == version {
+			return true
+		}
+	}
+	return false
+}
+
+// InstalledPHPVersions returns the list of PHP versions installed on the
+// server, always including the server's default PHPVersion.
+func (s *Server) InstalledPHPVersions() []string {
+	result := []string{}
+	if s.PHPVersion != "" {
+		result = append(result, s.PHPVersion)
+	}
+	for _, v := range s.PHPVersions {
+		if v != s.PHPVersion {
+			result = append(result, v)
+		}
+	}
+	return result
 }

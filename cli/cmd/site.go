@@ -56,20 +56,7 @@ var siteCreateCmd = &cobra.Command{
 
 			// Auto-generate site ID if not provided
 			if siteID == "" {
-				// Find target server to get existing sites
-				var targetServer *models.Server
-				for i := range cfg.Servers {
-					if cfg.Servers[i].Name == serverName {
-						targetServer = &cfg.Servers[i]
-						break
-					}
-				}
-				if targetServer != nil {
-					siteID = prompt.GenerateSiteID(domain, targetServer.Sites)
-				} else {
-					// Server not found will be caught later
-					siteID = prompt.GenerateSiteID(domain, nil)
-				}
+				siteID = prompt.GenerateSiteID(domain, prompt.AllSites(cfg.Servers))
 			}
 
 			input = &prompt.SiteInput{
@@ -88,6 +75,13 @@ var siteCreateCmd = &cobra.Command{
 				color.Red("Error: %v", err)
 				os.Exit(1)
 			}
+		}
+
+		// Enforce globally-unique site IDs so the same ID can't exist on
+		// multiple servers (interactive mode already generates a unique ID).
+		if err := prompt.EnsureSiteIDUnique(input.SiteID, cfg.Servers); err != nil {
+			color.Red("Error: %v", err)
+			os.Exit(1)
 		}
 
 		// Find the target server

@@ -31,6 +31,9 @@ type Site struct {
 	PHPVersion    string    `yaml:"php_version"`
 	Metadata      Metadata  `yaml:"metadata"`
 	Notes         string    `yaml:"notes,omitempty"`
+	// PublicDomain is the address WordPress uses when it differs from
+	// PrimaryDomain (which names the site's directory and never changes).
+	PublicDomain string `yaml:"public_domain,omitempty"`
 }
 
 // rawSite is used for YAML unmarshalling with backwards compatibility
@@ -46,6 +49,7 @@ type rawSite struct {
 	PHPVersion    string    `yaml:"php_version"`
 	Metadata      Metadata  `yaml:"metadata"`
 	Notes         string    `yaml:"notes,omitempty"`
+	PublicDomain  string    `yaml:"public_domain,omitempty"`
 }
 
 // UnmarshalYAML implements custom unmarshalling for backwards compatibility
@@ -72,6 +76,7 @@ func (s *Site) UnmarshalYAML(value *yaml.Node) error {
 	s.PHPVersion = raw.PHPVersion
 	s.Metadata = raw.Metadata
 	s.Notes = raw.Notes
+	s.PublicDomain = raw.PublicDomain
 
 	return nil
 }

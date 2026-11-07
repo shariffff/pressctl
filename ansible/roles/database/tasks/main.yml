@@ -22,6 +22,14 @@
     state: started
     enabled: true
 
+- name: Create the MariaDB log directory (for the slow query log)
+  ansible.builtin.file:
+    path: /var/log/mysql
+    state: directory
+    owner: mysql
+    group: adm
+    mode: "2750"
+
 # Apply MariaDB configuration from template
 # Settings include buffer pool size, max connections, character set
 - name: Configure MariaDB settings

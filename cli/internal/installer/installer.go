@@ -9,7 +9,7 @@ import (
 
 const (
 	pressctlDir = ".pressctl"
-	ansibleDir = "ansible"
+	ansibleDir  = "ansible"
 )
 
 // GetWordmonDir returns the path to ~/.pressctl/

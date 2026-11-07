@@ -14,7 +14,7 @@
 
 # Everything inside the home belongs to the site user, who (or whose PHP) can
 # replace any of it with a link, including parent directories such as ~/.local
-# or ~/tmp. Root following such a link would hand a system directory to the
+# or ~/.php-tmp. Root following such a link would hand a system directory to the
 # user. So these are created as the site user: a link can only lead them to
 # what they could already change.
 - name: Ensure the site's own directories exist
@@ -32,16 +32,9 @@
     - { path: "{{ site_home }}/.local/bin", mode: "0755" }
     - { path: "{{ site_home }}/.ssh", mode: "0700" }
     - { path: "{{ site_home }}/.wp-cli", mode: "0755" }
-    - { path: "{{ site_home }}/tmp", mode: "0700" }
-    - { path: "{{ site_home }}/tmp/sessions", mode: "0700" }
 
-- name: Set up the site's web log directory and log format
-  ansible.builtin.include_role:
-    name: libs
-    tasks_from: site_web_logs.yml
-  vars:
-    site_log_domain: "{{ domain }}"
-    site_log_group: "{{ site_group }}"
+- name: Ensure the directories the site's PHP pool needs exist
+  ansible.builtin.include_tasks: runtime_dirs.yml
 
 # The site's own logs (PHP's debug.log) stay in ~/logs and are rotated as the
 # site user, so logrotate never works as root inside a directory the user owns.

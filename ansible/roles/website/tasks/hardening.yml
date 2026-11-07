@@ -139,6 +139,45 @@
     mode: "0644"
   register: site_pool_include
 
+# ── Database connections ──
+# The site's database user (named after the site) may hold one connection per
+# PHP worker plus room for wp-cron, WP-CLI and backups. Read the workers from
+# the pool itself, since an operator may have raised them. Only ever raises the
+# cap: one set higher by hand is kept.
+- name: Read the site's PHP pool
+  ansible.builtin.slurp:
+    src: "/etc/php/{{ php_version }}/fpm/pool.d/{{ site_id }}.conf"
+  register: site_pool_conf
+  failed_when: false
+
+- name: Read the site's database connection cap
+  community.mysql.mysql_query:
+    query: "SELECT max_user_connections AS cap FROM mysql.user WHERE User = %s AND Host = 'localhost'"
+    positional_args: ["{{ site_id }}"]
+    config_file: /root/.my.cnf
+  register: site_db_cap_now
+  changed_when: false
+  check_mode: false
+
+# 0 means no cap at all (playbooks/harden_server.yml caps those first).
+- name: Raise the site's database connection cap to fit its PHP workers
+  community.mysql.mysql_query:
+    query: "ALTER USER %s@'localhost' WITH MAX_USER_CONNECTIONS {{ site_db_cap_wanted }}"
+    positional_args: ["{{ site_id }}"]
+    config_file: /root/.my.cnf
+  vars:
+    site_db_cap_current: "{{ site_db_cap_now.query_result[0][0].cap | int }}"
+    site_db_cap_wanted: >-
+      {{ [site_db_max_user_connections | int,
+          (site_pool_conf.content | default('') | b64decode
+           | regex_search('^pm\.max_children\s*=\s*(\d+)', '\1', multiline=True)
+           | default([site_php_pm_max_children], true) | first | int) + 10] | max }}
+  when:
+    - not ansible_check_mode
+    - site_db_cap_now.query_result[0] | length > 0
+    - site_db_cap_current | int != 0
+    - site_db_cap_current | int < site_db_cap_wanted | int
+
 # ── WordPress ──
 - name: Check for the site's wp-config.php
   ansible.builtin.stat:

@@ -30,12 +30,15 @@ site_page_cache_ttl: "5m"
 site_page_cache_max_size: "1g"
 
 # Longest a PHP request may run, wall clock (includes time waiting on the
-# database or remote HTTP calls, which max_execution_time does not count)
-site_php_request_terminate_timeout: "120s"
+# database or remote HTTP calls, which max_execution_time does not count).
+# Follows php_max_execution_time (group_vars) so it never cuts below it.
+site_php_request_terminate_timeout: "{{ (php_max_execution_time | default(300) | int) + 30 }}s"
 # Requests slower than this get a PHP stack trace in the site's php-slow.log
 site_php_slowlog_timeout: "5s"
 
-# Most database connections one site may hold at once
+# Most database connections one site may hold at once. The cap applied is the
+# larger of this and the site's PHP workers + 10 (one per worker, plus room for
+# wp-cron, WP-CLI and backups), so raising site_php_pm_max_children raises it.
 site_db_max_user_connections: 20
 
 # Redis object cache: each site gets its own Redis account (limited to its own

@@ -61,8 +61,9 @@
   loop: "{{ php_fpm_versions }}"
   register: php_unit_result
 
-# Each site's temp dir (/sites/<domain>/tmp) holds uploads in progress and PHP
-# sessions (tmp/sessions). Clear out anything older than a day.
+# Each site's PHP temp dir (/sites/<domain>/.php-tmp) holds uploads in progress
+# and PHP sessions (.php-tmp/sessions). Clear out anything older than a day.
+# Only this platform-owned directory: never the customer's own ~/tmp.
 - name: Clean the sites' temp directories daily
   ansible.builtin.copy:
     dest: /etc/tmpfiles.d/pressctl-sites.conf
@@ -71,10 +72,10 @@
     mode: "0644"
     content: |
       # {{ ansible_managed | default('Managed by pressctl') }}
-      e /sites/*/tmp - - - 1d
+      e /sites/*/.php-tmp - - - 1d
       # Its own line, so the sessions directory itself is never removed
       # (an "e" line only cleans what is inside the directory).
-      e /sites/*/tmp/sessions - - - 1d
+      e /sites/*/.php-tmp/sessions - - - 1d
 
 # cgi-fcgi lets pressctl-site-stats read each pool's status page from its socket.
 - name: Install the FastCGI client used to read PHP-FPM status

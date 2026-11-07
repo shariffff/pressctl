@@ -66,6 +66,9 @@
     permissions: x
     state: present
 
+# follow: false applies the owner to the link, not to /usr/bin/php<version>.
+# With the default (follow: true) Ansible chowns the link's target, which
+# handed the server's PHP binary to the site user when this ran as root.
 - name: Symlink PHP binary
   become_user: "{{ site_user }}"
   ansible.builtin.file:
@@ -74,3 +77,4 @@
     state: link
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
+    follow: false

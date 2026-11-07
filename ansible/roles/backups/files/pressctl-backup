@@ -24,6 +24,7 @@ import pwd
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 
@@ -76,10 +77,31 @@ def check_site(site):
         info = pwd.getpwnam(site)
     except KeyError:
         raise Fail('Unknown site {}'.format(site), 64)
-    files = os.path.join(info.pw_dir, 'files')
-    if not os.path.isdir(files):
-        raise Fail('Site {} has no files directory'.format(site), 64)
-    return info.pw_dir, files
+    # The home and everything in it belong to the site user, who can replace
+    # ~/files with a link. Root reads and writes it below, so it must be the
+    # site's own real directory, never a link to somewhere else.
+    home, files = info.pw_dir, os.path.join(info.pw_dir, 'files')
+    for path in (home, files):
+        try:
+            st = os.lstat(path)
+        except OSError:
+            raise Fail('Site {} has no files directory'.format(site), 64)
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != info.pw_uid:
+            raise Fail('{} is not a directory owned by {}'.format(path, site), 64)
+    return home, files
+
+
+def open_site_files(site, files):
+    """Open the site's files directory without following a link and check it
+    still belongs to the site, so the caller can work on that exact directory
+    even if the site swaps the path afterwards."""
+    uid = pwd.getpwnam(site).pw_uid
+    fd = os.open(files, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    st = os.fstat(fd)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != uid:
+        os.close(fd)
+        raise Fail('{} is not a directory owned by {}'.format(files, site), 64)
+    return fd
 
 
 def site_state(site):
@@ -106,14 +128,11 @@ class SiteLock:
         self.f.close()
 
 
-def db_name(files, site):
-    try:
-        with open(os.path.join(files, 'wp-config.php'), errors='replace') as f:
-            m = re.search(r"define\(\s*['\"]DB_NAME['\"]\s*,\s*['\"]([^'\"]+)['\"]", f.read())
-        if m and re.match(r'^[A-Za-z0-9_]+$', m.group(1)):
-            return m.group(1)
-    except OSError:
-        pass
+def db_name(site):
+    # A site's database is named after the site (website.yml: db_name =
+    # site_id), and its DB user can only use that one. Never take the name
+    # from wp-config.php: the site writes that file, and the dump, the DROPs
+    # and the import below run as the MariaDB root user.
     return site
 
 
@@ -276,7 +295,7 @@ def create_set(site, context, comment):
             with open(dump, 'wb') as out:
                 os.fchmod(out.fileno(), 0o600)
                 result = subprocess.run([dump_tool(), '--single-transaction', '--quick', '--no-tablespaces',
-                                         '--default-character-set=utf8mb4', db_name(files, site)],
+                                         '--default-character-set=utf8mb4', db_name(site)],
                                         stdout=out, stderr=subprocess.PIPE)
             if result.returncode != 0:
                 raise Fail('Database dump failed: {}'.format(result.stderr.decode(errors='replace').strip()[-400:]), 3)
@@ -352,11 +371,18 @@ def cmd_restore(args):
             dump = sqldir if os.path.isfile(sqldir) else os.path.join(sqldir, 'db.sql')
             if not os.path.isfile(dump):
                 raise Fail('The database part of that backup is empty', 3)
-            rsync = ['rsync', '-a', '--delete'] + ['--exclude=' + p for p in IGNORE] + [tree + '/', files + '/']
-            r = run(rsync)
+            # Write into the directory opened here (no link followed), not into
+            # whatever the path names by the time rsync gets to it: rsync starts
+            # inside that directory and copies to '.'.
+            fd = open_site_files(args.site, files)
+            try:
+                rsync = ['rsync', '-a', '--delete'] + ['--exclude=' + p for p in IGNORE] + [tree + '/', './']
+                r = run(rsync, preexec_fn=lambda: os.fchdir(fd), pass_fds=(fd,))
+            finally:
+                os.close(fd)
             if r.returncode != 0:
                 raise Fail('Restoring files failed: {}'.format(r.stderr.strip()[-400:]), 3)
-            db = db_name(files, args.site)
+            db = db_name(args.site)
             tables = run([sql_tool(), '-N', '-B', '-e',
                           "SELECT table_name FROM information_schema.tables WHERE table_schema='{}'".format(db)])
             if tables.returncode != 0:

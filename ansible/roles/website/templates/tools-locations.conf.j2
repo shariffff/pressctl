@@ -9,6 +9,8 @@
 location = /adminer.php {
     # Restrict to the SSO entry point only.
     include fastcgi.conf;
+    # The host nginx routed on (request line, else Host), for the SSO guard.
+    fastcgi_param PRESSCTL_SITE_HOST $host;
     fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/adminer.php;
     fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
 }
@@ -20,12 +22,16 @@ location = /adminer.php {
 location ^~ /filemanager/ {
     location = /filemanager/ {
         include fastcgi.conf;
+        # The host nginx routed on (request line, else Host), for the SSO guard.
+        fastcgi_param PRESSCTL_SITE_HOST $host;
         fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/filemanager/index.php;
         fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
     }
 
     location = /filemanager/index.php {
         include fastcgi.conf;
+        # The host nginx routed on (request line, else Host), for the SSO guard.
+        fastcgi_param PRESSCTL_SITE_HOST $host;
         fastcgi_param SCRIPT_FILENAME {{ site_home }}/tools/filemanager/index.php;
         fastcgi_pass unix:/run/php/php{{ php_version }}-{{ site_id }}.sock;
     }

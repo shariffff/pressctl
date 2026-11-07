@@ -27,8 +27,32 @@ const WORDSAIL_ELFINDER_ROOT = '{{ filemanager_root }}';
 const WORDSAIL_ELFINDER_TEMP = __DIR__ . '/.tmp';
 
 if (isset($_GET['cmd']) || ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    wordsail_elfinder_reject_cross_site();
     wordsail_elfinder_connector();
     exit;
+}
+
+/**
+ * The only credential is the SameSite=Lax tool cookie, which browsers also
+ * send on a link or redirect from another site. So: a command a browser marks
+ * as coming from another site is refused, and on GET only read-only commands
+ * run (this page's own client sends everything else as POST, which other
+ * sites cannot do with the cookie attached).
+ */
+function wordsail_elfinder_reject_cross_site(): void
+{
+    $read_only = array('open', 'file', 'tree', 'parents', 'ls', 'tmb', 'size', 'dim',
+                       'info', 'search', 'get', 'url', 'zipdl');
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $cmd = (string) ($_GET['cmd'] ?? ($_POST['cmd'] ?? ''));
+    $cross_site = ($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site';
+
+    if ($cross_site || ($method !== 'POST' && !in_array($cmd, $read_only, true))) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(array('error' => array('errPerm')));
+        exit;
+    }
 }
 
 /**
@@ -106,6 +130,9 @@ $v = '?v={{ elfinder_version }}';
 $(function () {
     $('#elfinder').elfinder({
         url: '/filemanager/index.php',
+        // Commands that change files are only accepted as POST (see
+        // wordsail_elfinder_reject_cross_site).
+        requestType: 'post',
         baseUrl: '<?= $assets ?>/elfinder/',
         cssAutoLoad: false,
         lang: 'en',

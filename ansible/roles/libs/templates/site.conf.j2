@@ -18,7 +18,7 @@ server {
 
 	index index.html index.php;
 
-	access_log /var/log/pressctl/sites/{{ domain }}/access.log pressctl;
+	access_log /var/log/pressctl/sites/{{ domain }}/access.log {{ site_access_log_format | default('combined') }};
 	error_log /var/log/pressctl/sites/{{ domain }}/error.log;
 
 	# Don't allow pages to be rendered in an iframe on external domains.

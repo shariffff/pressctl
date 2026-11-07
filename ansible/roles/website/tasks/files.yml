@@ -2,18 +2,31 @@
 # Tenant isolation: the site home is private to its own user. nginx (www-data)
 # only gets traverse access, so it can serve files but other sites' users and
 # PHP processes cannot list or read this site (wp-config.php holds DB creds).
-- name: Ensure site directories exist
+# The home itself sits in root-owned /sites, so root can set it up safely.
+- name: Ensure the site directory exists
+  ansible.builtin.file:
+    path: "{{ site_home }}"
+    state: directory
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0750"
+    follow: false
+
+# Everything inside the home belongs to the site user, who (or whose PHP) can
+# replace any of it with a link, including parent directories such as ~/.local
+# or ~/tmp. Root following such a link would hand a system directory to the
+# user. So these are created as the site user: a link can only lead them to
+# what they could already change.
+- name: Ensure the site's own directories exist
+  become_user: "{{ site_user }}"
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
     mode: "{{ item.mode }}"
-    # These paths are the site user's: never follow a link they put there
-    # (root would otherwise change the owner of whatever it points at).
     follow: false
   loop:
-    - { path: "{{ site_home }}", mode: "0750" }
     - { path: "{{ site_home }}/files", mode: "0755" }
     - { path: "{{ site_home }}/logs", mode: "0755" }
     - { path: "{{ site_home }}/.local/bin", mode: "0755" }
@@ -22,34 +35,13 @@
     - { path: "{{ site_home }}/tmp", mode: "0700" }
     - { path: "{{ site_home }}/tmp/sessions", mode: "0700" }
 
-# nginx and PHP-FPM open these logs as root, so they live outside the site's
-# home in a directory the site user can read but never change (a log in a
-# directory the user owns could be swapped for a link to a system file).
-# PHP-FPM refuses to start if a pool's slow log directory is missing, so this
-# must exist before the pool is written.
-- name: Ensure the root-owned web log directory exists
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    owner: root
-    group: "{{ item.group }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - { path: /var/log/pressctl, group: root, mode: "0755" }
-    - { path: /var/log/pressctl/sites, group: root, mode: "0711" }
-    - { path: "/var/log/pressctl/sites/{{ domain }}", group: "{{ site_group }}", mode: "0750" }
-  loop_control:
-    label: "{{ item.path }}"
-
-# nginx's workers (www-data) reopen the logs themselves after a rotation
-# (USR1), so they need to pass through the directory. Traverse only.
-- name: Let nginx's workers reopen the site's web logs
-  ansible.posix.acl:
-    path: "/var/log/pressctl/sites/{{ domain }}"
-    entity: www-data
-    etype: user
-    permissions: x
-    state: present
+- name: Set up the site's web log directory and log format
+  ansible.builtin.include_role:
+    name: libs
+    tasks_from: site_web_logs.yml
+  vars:
+    site_log_domain: "{{ domain }}"
+    site_log_group: "{{ site_group }}"
 
 # The site's own logs (PHP's debug.log) stay in ~/logs and are rotated as the
 # site user, so logrotate never works as root inside a directory the user owns.
@@ -82,6 +74,7 @@
     state: present
 
 - name: Symlink PHP binary
+  become_user: "{{ site_user }}"
   ansible.builtin.file:
     src: "/usr/bin/php{{ php_version }}"
     dest: "{{ site_home }}/.local/bin/php"

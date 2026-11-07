@@ -79,14 +79,19 @@
     label: "{{ item.name }}"
 
 # ── Per-site tools ──
+# ~/tools and everything in it belong to the site user, whose PHP can swap any
+# of it for a link. Each task that writes or deletes there runs as the site
+# user, so a link can never lead it to a file the user could not already change.
 
 - name: Create site tools directories
+  become_user: "{{ site_user }}"
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: "{{ site_user }}"
     group: "{{ site_group }}"
     mode: "0700"
+    follow: false
   loop:
     - "{{ site_home }}/tools"
     - "{{ site_home }}/tools/filemanager"
@@ -95,11 +100,13 @@
 
 # Sites created before the switch to elFinder carry Tiny File Manager here.
 - name: Remove Tiny File Manager
+  become_user: "{{ site_user }}"
   ansible.builtin.file:
     path: "{{ site_home }}/tools/filemanager/lib"
     state: absent
 
 - name: Download Adminer
+  become_user: "{{ site_user }}"
   ansible.builtin.get_url:
     url: "{{ adminer_url }}"
     dest: "{{ site_home }}/tools/adminer-6.0.1.php"
@@ -110,6 +117,7 @@
   become: true
 
 - name: Deploy shared SSO guard
+  become_user: "{{ site_user }}"
   ansible.builtin.template:
     src: sso-guard.php.j2
     dest: "{{ site_home }}/tools/sso-guard.php"
@@ -120,6 +128,7 @@
 # HMAC key for the SSO session cookie. Must be readable only by the site
 # user (PHP-FPM), never world-readable, and never served by nginx.
 - name: Deploy SSO cookie secret
+  become_user: "{{ site_user }}"
   ansible.builtin.copy:
     content: "{{ sso_secret }}"
     dest: "{{ site_home }}/tools/.sso-secret"
@@ -129,6 +138,7 @@
   no_log: true
 
 - name: Deploy the file manager's SSO-guarded entry point
+  become_user: "{{ site_user }}"
   ansible.builtin.template:
     src: elfinder-index.php.j2
     dest: "{{ site_home }}/tools/filemanager/index.php"
@@ -137,6 +147,7 @@
     mode: "0644"
 
 - name: Deploy Adminer SSO entry
+  become_user: "{{ site_user }}"
   ansible.builtin.template:
     src: adminer.php.j2
     dest: "{{ site_home }}/tools/adminer.php"
@@ -148,6 +159,7 @@
 # PHP-FPM pool runs as {{ site_user }} so it has to be readable by that user.
 # 0600 inside the non-web-accessible tools dir satisfies both.
 - name: Deploy Adminer database credentials
+  become_user: "{{ site_user }}"
   ansible.builtin.template:
     src: db-creds.php.j2
     dest: "{{ site_home }}/tools/.db-creds.php"

@@ -26,6 +26,16 @@
     alias_conf: "/etc/nginx/sites-available/{{ primary_domain }}/after/alias-{{ domain }}.conf"
   tags: [add_alias, issue_alias_ssl, remove_alias]
 
+# The alias logs into the primary site's log directory (sites created before
+# it moved out of the home don't have one yet) in a format nginx knows.
+- name: Set up the site's web log directory and log format
+  ansible.builtin.import_tasks: site_web_logs.yml
+  vars:
+    site_log_domain: "{{ primary_domain }}"
+    site_log_group: "{{ site_id }}"
+  when: operation in ['add_alias', 'issue_alias_ssl']
+  tags: [add_alias, issue_alias_ssl]
+
 - name: Render HTTP-only alias server block
   ansible.builtin.template:
     src: alias.conf.j2

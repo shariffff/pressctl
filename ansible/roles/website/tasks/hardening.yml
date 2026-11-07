@@ -15,8 +15,10 @@
   ansible.builtin.find:
     paths: "/etc/nginx/sites-available/{{ domain }}"
     recurse: true
-    # find matches each line from its start; config lines start with a tab
-    contains: '.*/sites/[^/ ]+/logs/(access|error)\.log'
+    # find matches each line from its start; config lines start with a tab.
+    # Old log paths, or access logs not yet in the timing format (sites
+    # created on a server without it log in nginx's `combined` format).
+    contains: '.*(/sites/[^/ ]+/logs/(access|error)\.log|access_log /var/log/pressctl/sites/[^/ ]+/access\.log( combined)?;)'
   register: site_nginx_log_confs
 
 - name: Move the site's nginx logs out of the site's home
@@ -29,15 +31,18 @@
     label: "{{ item.path }}"
   register: site_log_moves
 
+# Only once nginx defines the format (site_web_logs.yml, run from files.yml,
+# checks): a config naming an unknown format fails `nginx -t`.
 - name: Use the timing log format for the site's access log
   ansible.builtin.replace:
     path: "{{ item.path }}"
-    regexp: 'access_log /var/log/pressctl/sites/([^/ ]+)/access\.log;'
+    regexp: 'access_log /var/log/pressctl/sites/([^/ ]+)/access\.log( combined)?;'
     replace: 'access_log /var/log/pressctl/sites/\1/access.log pressctl;'
   loop: "{{ site_nginx_log_confs.files }}"
   loop_control:
     label: "{{ item.path }}"
   register: site_log_formats
+  when: site_access_log_format | default('combined') == 'pressctl'
 
 # ── Page cache ──
 # 100 MB of shared memory per site for cache keys was far more than needed

@@ -29,42 +29,32 @@
     state: absent
   tags: add_domain
 
+# /sites is root-owned, so root may look at the site's home; anything inside
+# it belongs to the site user and is created as that user (root following a
+# link the user left at ~/logs would hand them whatever it points at).
+- name: Check for the site's home
+  ansible.builtin.stat:
+    path: "/sites/{{ domain }}"
+    follow: false
+  register: add_domain_site_home
+  tags: add_domain
+
 - name: Ensure site logs directory exists (PHP's own error log)
+  become_user: "{{ site_id if add_domain_site_home.stat.exists else 'root' }}"
   ansible.builtin.file:
     path: "/sites/{{ domain }}/logs"
     state: directory
     owner: "{{ site_id }}"
     group: "{{ site_id }}"
     mode: "0755"
+    follow: false
   tags: add_domain
 
-# nginx opens its logs as root, so they live in a root-owned directory the site
-# user can read but not change (in a directory the user owns, a log could be
-# swapped for a link to a system file). The site's group may read them.
-- name: Ensure the root-owned web log directory exists
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    owner: root
-    group: "{{ item.group }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - { path: /var/log/pressctl, group: root, mode: "0755" }
-    - { path: /var/log/pressctl/sites, group: root, mode: "0711" }
-    - { path: "/var/log/pressctl/sites/{{ domain }}", group: "{{ site_id }}", mode: "0750" }
-  loop_control:
-    label: "{{ item.path }}"
-  tags: add_domain
-
-# nginx's workers (www-data) reopen the logs themselves after a rotation
-# (USR1), so they need to pass through the directory. Traverse only.
-- name: Let nginx's workers reopen the site's web logs
-  ansible.posix.acl:
-    path: "/var/log/pressctl/sites/{{ domain }}"
-    entity: www-data
-    etype: user
-    permissions: x
-    state: present
+- name: Set up the site's web log directory and log format
+  ansible.builtin.import_tasks: site_web_logs.yml
+  vars:
+    site_log_domain: "{{ domain }}"
+    site_log_group: "{{ site_id }}"
   tags: add_domain
 
 - name: Deploy main site config

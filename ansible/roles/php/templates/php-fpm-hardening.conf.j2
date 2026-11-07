@@ -14,6 +14,12 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
+# Sites can write files under /sites, but PHP must never run or load code
+# from there as a program or library: putenv('LD_PRELOAD=...') followed by
+# mail() would otherwise load a site's own .so into the sendmail shell, outside
+# open_basedir and disable_functions. PHP scripts are read, not executed, so
+# this does not affect them.
+NoExecPaths=/sites
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 RestrictNamespaces=yes

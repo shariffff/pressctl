@@ -11,9 +11,17 @@
 # runs sftp-server, scp and rsync) are passed to bash unchanged.
 set -u
 
-user=$(id -un)
-home=$(getent passwd "$user" | cut -d: -f6)
-group=$(id -gn)
+# Everything before the sandbox starts runs with the caller's environment.
+# cron passes the site's crontab PATH, and the site owns ~/.local/bin, so a
+# program named `id` there would run outside the sandbox. Use fixed system
+# paths only (the sandbox sets its own PATH again after --clearenv).
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
+
+user=$(/usr/bin/id -un)
+home=$(/usr/bin/getent passwd "$user" | /usr/bin/cut -d: -f6)
+group=$(/usr/bin/id -gn)
 
 if [ -z "$home" ] || [ ! -d "$home" ] || [ ! -x /usr/bin/bwrap ]; then
     echo "This account isn't ready for sign-in yet. Please contact support." >&2
@@ -94,5 +102,5 @@ else
 fi
 
 exec /usr/bin/bwrap "${args[@]}" "$@" \
-    8< <(getent passwd root nobody "$user") \
-    9< <(getent group root nogroup "$group")
+    8< <(/usr/bin/getent passwd root nobody "$user") \
+    9< <(/usr/bin/getent group root nogroup "$group")

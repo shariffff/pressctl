@@ -3,7 +3,10 @@
   ansible.builtin.assert:
     that:
       - domain is defined and domain != ""
-    fail_msg: "Required variable missing: domain must be provided for remove_domain operation"
+      # Joined into paths this play deletes as root: '.', '..' or '/' would
+      # delete other sites' configuration or /etc/nginx itself.
+      - domain is match('^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$')
+    fail_msg: "domain must be a plain lowercase domain name for remove_domain"
     success_msg: "Required domain variable is properly defined"
   tags: remove_domain
 

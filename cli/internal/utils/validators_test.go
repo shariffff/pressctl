@@ -172,3 +172,16 @@ func TestValidatePort(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSiteIDRejectsUnsafeNames(t *testing.T) {
+	for _, id := range []string{"shop_1", "Shop1", "my%db", "mysql", "pressctl", "admin", "sys", "ubuntu", "adm", "root"} {
+		if err := ValidateSiteID(id); err == nil {
+			t.Errorf("ValidateSiteID(%q) = nil, want an error", id)
+		}
+	}
+	for _, id := range []string{"examplecom", "shop1", "abc"} {
+		if err := ValidateSiteID(id); err != nil {
+			t.Errorf("ValidateSiteID(%q) = %v, want nil", id, err)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -63,6 +64,22 @@ Examples:
 			input, err = prompt.PromptDomainAdd(cfg.Servers)
 			if err != nil {
 				outputError(cmd, "Failed to get domain details", err)
+				os.Exit(1)
+			}
+		}
+
+		// The domain becomes root file paths and nginx config on the server.
+		input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
+		if err := utils.ValidateDomain(input.Domain); err != nil {
+			outputError(cmd, "Invalid domain", fmt.Errorf("%q: %w", input.Domain, err))
+			os.Exit(1)
+		}
+
+		// A hostname can belong to one site only: a second vhost or certificate
+		// for it would take traffic or the certificate from the other site.
+		for i := range cfg.Servers {
+			if owner := utils.FindSiteByDomain(&cfg.Servers[i], input.Domain); owner != nil {
+				outputError(cmd, "Domain in use", fmt.Errorf("%s is already used by site '%s' on server '%s'", input.Domain, owner.SiteID, cfg.Servers[i].Name))
 				os.Exit(1)
 			}
 		}
@@ -238,6 +255,13 @@ Examples:
 			}
 		}
 
+		// The domain becomes root file paths and nginx config on the server.
+		input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
+		if err := utils.ValidateDomain(input.Domain); err != nil {
+			outputError(cmd, "Invalid domain", fmt.Errorf("%q: %w", input.Domain, err))
+			os.Exit(1)
+		}
+
 		// Find the target server
 		var targetServer *models.Server
 		for i := range cfg.Servers {
@@ -249,6 +273,13 @@ Examples:
 
 		if targetServer == nil {
 			color.Red("Error: Server '%s' not found", input.ServerName)
+			os.Exit(1)
+		}
+
+		// Only a domain the named site actually has: the playbook deletes the
+		// domain's nginx configuration as root, whichever site it belongs to.
+		if owner := utils.FindSiteByDomain(targetServer, input.Domain); owner == nil || owner.SiteID != input.SiteID {
+			color.Red("Error: %s is not a domain of site '%s' on server '%s'", input.Domain, input.SiteID, input.ServerName)
 			os.Exit(1)
 		}
 
@@ -357,6 +388,12 @@ Examples:
 				outputError(cmd, "Failed to get SSL details", err)
 				os.Exit(1)
 			}
+		}
+
+		input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
+		if err := utils.ValidateDomain(input.Domain); err != nil {
+			outputError(cmd, "Invalid domain", fmt.Errorf("%q: %w", input.Domain, err))
+			os.Exit(1)
 		}
 
 		// Find the target server
@@ -495,6 +532,11 @@ Example:
 		domain, _ := cmd.Flags().GetString("domain")
 		if serverName == "" || siteName == "" || domain == "" {
 			outputError(cmd, "Incomplete flags", fmt.Errorf("--server, --site, and --domain are required"))
+			os.Exit(1)
+		}
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if err := utils.ValidateDomain(domain); err != nil {
+			outputError(cmd, "Invalid domain", fmt.Errorf("%q: %w", domain, err))
 			os.Exit(1)
 		}
 

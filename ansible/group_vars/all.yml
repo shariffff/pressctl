@@ -212,3 +212,21 @@ php_disabled_functions:
 
 # ImageMagick PDF policy (read|write allows PDF processing for WordPress)
 imagemagick_pdf_policy: "read|write"
+
+# Site ids that would collide with pressctl's own accounts and files, MariaDB
+# schemas, Redis users or PHP-FPM pool names. Existing Linux users and groups
+# are refused separately (website.yml). Keep in sync with cli/internal/utils.
+pressctl_reserved_site_ids:
+  - admin
+  - default
+  - global
+  - www
+  - scheduled
+  - pressctl
+  - pressctlbot
+  - healthcheck
+  - mysql
+  - mariadb
+  - sys
+  - root
+  - redis

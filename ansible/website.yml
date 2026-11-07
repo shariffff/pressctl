@@ -28,6 +28,54 @@
           Pass these via --extra-vars
       tags: ["website"]
 
+    # domain and site_id become root file paths, nginx config, a Linux user and
+    # group, a MariaDB database and user (where '_' and '%' are wildcards) and
+    # a Redis account, so only plain names get through.
+    - name: Check the domain and site id
+      ansible.builtin.assert:
+        that:
+          - domain is match('^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$')
+          - site_id is match('^[a-z0-9]{3,16}$')
+          - site_id not in pressctl_reserved_site_ids
+        fail_msg: >-
+          domain must be a plain lowercase domain name and site_id 3-16 lowercase
+          letters or digits, not a reserved name ({{ pressctl_reserved_site_ids | join(', ') }})
+      tags: ["website"]
+
+    # A new site must get its own account and directory. An existing user or
+    # group with this name is only accepted when it is this site's own (its
+    # home is /sites/<domain>, i.e. website.yml is being run again for the same
+    # site); anything else is a system account or another site.
+    - name: Look up an existing account with this site id
+      ansible.builtin.getent:
+        database: "{{ item }}"
+        key: "{{ site_id }}"
+        fail_key: false
+      loop: [passwd, group]
+      register: site_id_accounts
+      tags: ["website"]
+
+    - name: Look up an existing directory for this domain
+      ansible.builtin.stat:
+        path: "/sites/{{ domain }}"
+        follow: false
+      register: site_home_existing
+      tags: ["website"]
+
+    - name: Refuse to take over another account or site
+      ansible.builtin.assert:
+        that:
+          - (site_id_accounts.results[0].ansible_facts.getent_passwd[site_id] | default(none)) is none
+            or site_id_accounts.results[0].ansible_facts.getent_passwd[site_id][4] == '/sites/' ~ domain
+          - (site_id_accounts.results[1].ansible_facts.getent_group[site_id] | default(none)) is none
+            or (site_id_accounts.results[0].ansible_facts.getent_passwd[site_id] | default(none)) is not none
+          - not site_home_existing.stat.exists
+            or (site_home_existing.stat.isdir and site_home_existing.stat.pw_name == site_id)
+        fail_msg: >-
+          '{{ site_id }}' or /sites/{{ domain }} already belongs to another account or site.
+          Choose a different site id or domain.
+      tags: ["website"]
+
     - name: Generate random credentials and set dynamic facts
       ansible.builtin.set_fact:
         site_user: "{{ site_id }}"

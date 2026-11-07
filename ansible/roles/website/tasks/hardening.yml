@@ -44,6 +44,22 @@
   register: site_log_formats
   when: site_access_log_format | default('combined') == 'pressctl'
 
+# ── Symlinks ──
+# nginx serves static files as www-data, which can pass through every site's
+# home and log directory. Without this, a site could link another site's logs
+# or files into its own web root and download them. Links whose owner differs
+# from their target's (another site's files, root-owned logs) are refused.
+- name: Don't let nginx follow a link to another owner's file
+  ansible.builtin.copy:
+    dest: "/etc/nginx/sites-available/{{ domain }}/server/pressctl-symlinks.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed | default('Managed by pressctl') }}
+      disable_symlinks if_not_owner from=$document_root;
+  register: site_symlinks
+
 # ── Page cache ──
 # 100 MB of shared memory per site for cache keys was far more than needed
 # (1 MB holds ~8000 pages); also cap the cache's disk use.
@@ -230,7 +246,7 @@
   when:
     - not (pressctl_defer_reload | default(false) | bool)
     - not ansible_check_mode
-    - site_log_moves.changed or site_log_formats.changed or site_cache_zone.changed or site_cache_files.changed or site_cache_off.changed
+    - site_log_moves.changed or site_log_formats.changed or site_symlinks.changed or site_cache_zone.changed or site_cache_files.changed or site_cache_off.changed
 
 - name: Check the PHP-FPM configuration
   ansible.builtin.command: "php-fpm{{ php_version }} -t"

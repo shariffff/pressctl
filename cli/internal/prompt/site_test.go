@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"github.com/pressctl/cli/internal/utils"
 	"strings"
 	"testing"
 
@@ -41,5 +42,17 @@ func TestEnsureSiteIDUnique(t *testing.T) {
 
 	if err := EnsureSiteIDUnique("brandnew", servers); err != nil {
 		t.Errorf("EnsureSiteIDUnique() = %v, want nil for a fresh site ID", err)
+	}
+}
+
+func TestGenerateSiteIDSkipsReservedNames(t *testing.T) {
+	for _, domain := range []string{"mysql.com", "pressctl.com", "admin.io", "ubuntu.com"} {
+		id := GenerateSiteID(domain, nil)
+		if utils.IsReservedSiteID(id) {
+			t.Errorf("GenerateSiteID(%q) = %q, a reserved name", domain, id)
+		}
+		if err := utils.ValidateSiteID(id); err != nil {
+			t.Errorf("GenerateSiteID(%q) = %q: %v", domain, id, err)
+		}
 	}
 }

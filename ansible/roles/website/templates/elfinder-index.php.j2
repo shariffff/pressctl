@@ -27,7 +27,60 @@ const WORDSAIL_ELFINDER_ROOT = '{{ filemanager_root }}';
 const WORDSAIL_ELFINDER_TEMP = __DIR__ . '/.tmp';
 
 if (isset($_GET['cmd']) || ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    wordsail_elfinder_csrf_check();
     wordsail_elfinder_connector();
+    exit;
+}
+
+/**
+ * The SSO cookie is SameSite=Lax, so another site can still make the owner's
+ * browser send a top-level GET here. Block that from changing anything:
+ *
+ * 1. Only read-only commands may use GET; everything else needs POST (405).
+ * 2. Every connector request needs X-Requested-With: XMLHttpRequest, which a
+ *    cross-site link or form cannot add (403). Plain `cmd=file` is exempt
+ *    because downloads and previews open in a new tab; it is read-only.
+ * 3. A POST that carries Origin or Referer must come from this site (403).
+ */
+function wordsail_elfinder_csrf_check(): void
+{
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $cmd = (string) ($_REQUEST['cmd'] ?? '');
+
+    $readOnly = array('open', 'file', 'ls', 'tree', 'parents', 'info', 'size', 'dim', 'search', 'get', 'tmb');
+    if ($method !== 'POST' && !($method === 'GET' && in_array($cmd, $readOnly, true))) {
+        header('Allow: POST');
+        wordsail_elfinder_fail(405, 'Method not allowed.');
+    }
+
+    $isDownload = $method === 'GET' && $cmd === 'file';
+    if (!$isDownload && ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
+        wordsail_elfinder_fail(403, 'Missing request header.');
+    }
+
+    if ($method === 'POST') {
+        $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        foreach (array('HTTP_ORIGIN', 'HTTP_REFERER') as $key) {
+            if (!isset($_SERVER[$key]) || $_SERVER[$key] === '') {
+                continue;
+            }
+            $from = parse_url((string) $_SERVER[$key], PHP_URL_HOST);
+            $port = parse_url((string) $_SERVER[$key], PHP_URL_PORT);
+            if (is_string($from) && $port) {
+                $from .= ':' . $port;
+            }
+            if (!is_string($from) || $host === '' || strtolower($from) !== $host) {
+                wordsail_elfinder_fail(403, 'Cross-site request blocked.');
+            }
+        }
+    }
+}
+
+function wordsail_elfinder_fail(int $status, string $message): void
+{
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array('error' => $message));
     exit;
 }
 
@@ -111,6 +164,9 @@ $(function () {
         lang: 'en',
         height: '100%',
         resizable: false,
+        // Required by the CSRF check above; jQuery sends it already, this
+        // makes it explicit.
+        customHeaders: { 'X-Requested-With': 'XMLHttpRequest' },
         rememberLastDir: true
     });
     $(window).on('resize', function () {

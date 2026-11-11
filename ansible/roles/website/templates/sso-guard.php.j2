@@ -20,6 +20,8 @@
  * a per-site secret stored 0600 in .sso-secret next to this file. The HMAC
  * makes the cookie unforgeable; validation recomputes and compares it with
  * hash_equals().
+ * The signed payload also carries the issue time, which caps a session at
+ * WORDSAIL_TOOL_SSO_MAX_AGE even though the cookie's expiry rolls.
  */
 
 // Guard against direct web access to this file: it defines functions only,
@@ -32,6 +34,7 @@ if (!defined('ABSPATH') && basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sso-guar
 const WORDSAIL_TOOL_SSO_SERVER = '{{ wordsail_sso_server | default("managed.wordsail.com") }}';
 const WORDSAIL_TOOL_SSO_ENDPOINT = '/api/hosting/v1/wp-sso/';
 const WORDSAIL_TOOL_SSO_COOKIE_TTL = 3600;      // 1 hour, rolling
+const WORDSAIL_TOOL_SSO_MAX_AGE = 3600;         // absolute cap from issue, never extended
 const WORDSAIL_TOOL_SSO_COOKIE_PREFIX = 'wordsail_sso_';
 
 /**
@@ -46,8 +49,11 @@ function wordsail_tool_sso_guard(string $tool): void
 {
     $cookie = WORDSAIL_TOOL_SSO_COOKIE_PREFIX . $tool;
 
-    if (wordsail_tool_sso_valid_cookie($cookie)) {
-        wordsail_tool_sso_reissue($cookie);
+    $issued_at = wordsail_tool_sso_valid_cookie($cookie);
+    if ($issued_at !== null) {
+        // Roll the cookie's expiry but keep the original issue time, so the
+        // session dies WORDSAIL_TOOL_SSO_MAX_AGE after sign-in no matter what.
+        wordsail_tool_sso_reissue($cookie, $issued_at);
         return;
     }
 
@@ -138,26 +144,29 @@ function wordsail_tool_sso_server(): string
 }
 
 /**
- * Issue the session cookie. The value is a random nonce plus an HMAC over it
- * keyed by the per-site secret, so possession of a well-formed cookie is not
- * enough to authenticate.
+ * Issue the session cookie. The value is a random nonce, the issue time and
+ * an HMAC over both keyed by the per-site secret, so possession of a
+ * well-formed cookie is not enough to authenticate and the issue time cannot
+ * be altered to extend a session.
  */
 function wordsail_tool_sso_issue(string $cookie): void
 {
-    $nonce = bin2hex(random_bytes(32));
-    $value = $nonce . '.' . wordsail_tool_sso_sign($nonce);
-    wordsail_tool_sso_set_cookie($cookie, $value);
+    wordsail_tool_sso_write($cookie, time());
 }
 
 /**
- * Re-issue (roll) the cookie so an active session never goes stale. Re-sign
- * with a fresh nonce so an old valid cookie is never replayed indefinitely.
+ * Re-issue (roll) the cookie with a fresh nonce so an old valid cookie is
+ * never replayed indefinitely. The original issue time is carried over.
  */
-function wordsail_tool_sso_reissue(string $cookie): void
+function wordsail_tool_sso_reissue(string $cookie, int $issued_at): void
 {
-    $nonce = bin2hex(random_bytes(32));
-    $value = $nonce . '.' . wordsail_tool_sso_sign($nonce);
-    wordsail_tool_sso_set_cookie($cookie, $value);
+    wordsail_tool_sso_write($cookie, $issued_at);
+}
+
+function wordsail_tool_sso_write(string $cookie, int $issued_at): void
+{
+    $payload = bin2hex(random_bytes(32)) . '.' . $issued_at;
+    wordsail_tool_sso_set_cookie($cookie, $payload . '.' . wordsail_tool_sso_sign($payload));
 }
 
 function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
@@ -173,6 +182,9 @@ function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
             'path'     => '/',
             'secure'   => $secure,
             'httponly' => true,
+            // Lax, not Strict: the first request after the panel's token hop
+            // is a redirect that began on another site, and browsers do not
+            // send Strict cookies on it. CSRF is blocked by the tools instead.
             'samesite' => 'Lax',
         )
     );
@@ -201,34 +213,43 @@ function wordsail_tool_sso_secret(): string
 }
 
 /**
- * HMAC-SHA256 signature over the cookie nonce, hex encoded.
+ * HMAC-SHA256 signature over the cookie payload (nonce.issued_at), hex encoded.
  */
-function wordsail_tool_sso_sign(string $nonce): string
+function wordsail_tool_sso_sign(string $payload): string
 {
-    return hash_hmac('sha256', $nonce, wordsail_tool_sso_secret());
+    return hash_hmac('sha256', $payload, wordsail_tool_sso_secret());
 }
 
-function wordsail_tool_sso_valid_cookie(string $cookie): bool
+/**
+ * Validate the session cookie. Returns its issue time when the signature is
+ * good and the session is within its absolute lifetime, otherwise null.
+ */
+function wordsail_tool_sso_valid_cookie(string $cookie): ?int
 {
-    if (!isset($_COOKIE[$cookie])) {
-        return false;
+    if (!isset($_COOKIE[$cookie]) || !is_string($_COOKIE[$cookie])) {
+        return null;
     }
 
-    $value = (string) $_COOKIE[$cookie];
-
-    // Format: <64 hex nonce>.<64 hex signature>.
-    if (preg_match('/^([a-f0-9]{64})\.([a-f0-9]{64})$/', $value, $m) !== 1) {
-        return false;
+    // Format: <64 hex nonce>.<issued_at unix seconds>.<64 hex signature>.
+    if (preg_match('/^([a-f0-9]{64})\.(\d{1,12})\.([a-f0-9]{64})$/', $_COOKIE[$cookie], $m) !== 1) {
+        return null;
     }
 
-    $secret = wordsail_tool_sso_secret();
-    if ($secret === '') {
-        return false;
+    if (wordsail_tool_sso_secret() === '') {
+        return null;
     }
 
-    $expected = hash_hmac('sha256', $m[1], $secret);
+    if (!hash_equals(wordsail_tool_sso_sign($m[1] . '.' . $m[2]), $m[3])) {
+        return null;
+    }
 
-    return hash_equals($expected, $m[2]);
+    $issued_at = (int) $m[2];
+    $age = time() - $issued_at;
+    if ($age < 0 || $age > WORDSAIL_TOOL_SSO_MAX_AGE) {
+        return null;
+    }
+
+    return $issued_at;
 }
 
 /**

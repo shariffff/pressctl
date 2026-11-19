@@ -32,6 +32,27 @@
     mode: "0750"
   loop: "{{ php_fpm_versions }}"
 
+# Earlier site creations and PHP version changes chowned /usr/bin/php<version>
+# to a site user (ansible's file module followed the ~/.local/bin/php link).
+# Every site's wp-cron and root's own `php` run that binary, so give it back.
+- name: Find the PHP binaries
+  ansible.builtin.find:
+    paths: /usr/bin
+    patterns: 'php[0-9]*'
+    use_regex: false
+    file_type: file
+  register: php_binaries
+
+- name: Keep the PHP binaries owned by root
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    follow: false
+  loop: "{{ php_binaries.files | selectattr('uid', '!=', 0) | list + php_binaries.files | selectattr('gid', '!=', 0) | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: Apply the server-wide PHP settings (OPcache, permission checks)
   ansible.builtin.template:
     src: pressctl-php.ini.j2

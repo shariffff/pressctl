@@ -92,7 +92,10 @@
       loop_control:
         label: '{{ item.path }}'
 
+    # As the site user (~/.local/bin is theirs and may be a link), and with
+    # follow: false so the owner lands on the link, never on /usr/bin/php<version>.
     - name: Update site php binary symlink to {{ new_php_version }}
+      become_user: '{{ site_user }}'
       ansible.builtin.file:
         src: '/usr/bin/php{{ new_php_version }}'
         dest: '{{ site_home }}/.local/bin/php'
@@ -100,6 +103,7 @@
         force: true
         owner: '{{ site_user }}'
         group: '{{ site_group }}'
+        follow: false
 
     - name: Validate nginx configuration
       ansible.builtin.command:

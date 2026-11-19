@@ -33,27 +33,36 @@ if (isset($_GET['cmd']) || ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 /**
- * The SSO cookie is SameSite=Lax, so another site can still make the owner's
- * browser send a top-level GET here. Block that from changing anything:
+ * The only credential is the SameSite=Lax tool cookie, which browsers also
+ * send on a link or redirect from another site. Block that from changing
+ * anything:
  *
- * 1. Only read-only commands may use GET; everything else needs POST (405).
- * 2. Every connector request needs X-Requested-With: XMLHttpRequest, which a
- *    cross-site link or form cannot add (403). Plain `cmd=file` is exempt
- *    because downloads and previews open in a new tab; it is read-only.
- * 3. A POST that carries Origin or Referer must come from this site (403).
+ * 1. A request the browser marks as cross-site (Sec-Fetch-Site) is refused.
+ * 2. Only read-only commands may use GET; everything else needs POST (405).
+ * 3. Every connector request needs X-Requested-With: XMLHttpRequest, which a
+ *    cross-site link or form cannot add (403). Plain `cmd=file` and the zip
+ *    download step (`cmd=zipdl&download=1`) are exempt because they open in a
+ *    new tab or frame; both are read-only.
+ * 4. A POST that carries Origin or Referer must come from this site (403).
  */
 function wordsail_elfinder_csrf_check(): void
 {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $cmd = (string) ($_REQUEST['cmd'] ?? '');
 
-    $readOnly = array('open', 'file', 'ls', 'tree', 'parents', 'info', 'size', 'dim', 'search', 'get', 'tmb');
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site') {
+        wordsail_elfinder_fail(403, 'Cross-site request blocked.');
+    }
+
+    $readOnly = array('open', 'file', 'ls', 'tree', 'parents', 'info', 'size', 'dim',
+                      'search', 'get', 'tmb', 'url', 'zipdl');
     if ($method !== 'POST' && !($method === 'GET' && in_array($cmd, $readOnly, true))) {
         header('Allow: POST');
         wordsail_elfinder_fail(405, 'Method not allowed.');
     }
 
-    $isDownload = $method === 'GET' && $cmd === 'file';
+    $isDownload = $method === 'GET'
+        && ($cmd === 'file' || ($cmd === 'zipdl' && !empty($_GET['download'])));
     if (!$isDownload && ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
         wordsail_elfinder_fail(403, 'Missing request header.');
     }
@@ -159,6 +168,9 @@ $v = '?v={{ elfinder_version }}';
 $(function () {
     $('#elfinder').elfinder({
         url: '/filemanager/index.php',
+        // Commands that change files are only accepted as POST (see
+        // wordsail_elfinder_reject_cross_site).
+        requestType: 'post',
         baseUrl: '<?= $assets ?>/elfinder/',
         cssAutoLoad: false,
         lang: 'en',

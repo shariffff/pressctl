@@ -18,13 +18,47 @@ func ValidateDomain(domain string) error {
 	return nil
 }
 
-// ValidateSiteID validates a site ID (alphanumeric, 3-16 chars)
+// reservedSiteIDs are names a site must never take. A site ID becomes the
+// site's Linux user and group, MariaDB database and user, PHP-FPM pool and
+// Redis account, so it must not name an account or schema the server already
+// uses (the playbook also refuses any existing system user or group).
+var reservedSiteIDs = map[string]bool{
+	// pressctl's own accounts and files
+	"pressctl": true, "pressctlbot": true, "admin": true, "default": true,
+	"global": true, "www": true, "scheduled": true, "healthcheck": true,
+	// MariaDB, Redis and web server
+	"mysql": true, "mariadb": true, "sys": true, "informationschema": true,
+	"performanceschema": true, "redis": true, "redissites": true, "nginx": true,
+	"wwwdata": true, "postfix": true, "debiansysmaint": true,
+	// Common Ubuntu system users and groups
+	"root": true, "daemon": true, "bin": true, "sync": true, "games": true,
+	"man": true, "mail": true, "news": true, "uucp": true, "proxy": true,
+	"backup": true, "list": true, "irc": true, "gnats": true, "nobody": true,
+	"nogroup": true, "messagebus": true, "syslog": true, "uuidd": true,
+	"tcpdump": true, "sshd": true, "landscape": true, "pollinate": true,
+	"ubuntu": true, "adm": true, "sudo": true, "staff": true, "users": true,
+	"shadow": true, "disk": true, "kmem": true, "utmp": true, "crontab": true,
+	"docker": true, "lxd": true, "plugdev": true, "netdev": true, "sslcert": true,
+	"polkitd": true, "dnsmasq": true, "clamav": true, "certbot": true,
+}
+
+// IsReservedSiteID reports whether name is reserved for the system.
+func IsReservedSiteID(name string) bool {
+	return reservedSiteIDs[strings.ToLower(name)]
+}
+
+// ValidateSiteID validates a site ID (lowercase letters and digits, 3-16
+// chars, not a reserved system name). It is used as a Linux user name and a
+// MariaDB database name, where '_' and '%' would be grant wildcards.
 func ValidateSiteID(name string) error {
 	if len(name) < 3 || len(name) > 16 {
 		return fmt.Errorf("site ID must be 3-16 characters")
 	}
-	if !regexp.MustCompile(`^[a-zA-Z0-9]+$`).MatchString(name) {
-		return fmt.Errorf("site ID must be alphanumeric only")
+	if !regexp.MustCompile(`^[a-z0-9]+$`).MatchString(name) {
+		return fmt.Errorf("site ID must be lowercase letters and digits only")
+	}
+	if IsReservedSiteID(name) {
+		return fmt.Errorf("site ID %q is reserved for the system; choose another", name)
 	}
 	return nil
 }

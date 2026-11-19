@@ -4,7 +4,10 @@
     that:
       - domain is defined and domain != ""
       - site_id is defined and site_id != ""
-    fail_msg: "Required variables missing: domain and site_id must be provided for add_domain operation"
+      # Used in root file paths and nginx config: plain domain names only.
+      - domain is match('^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$')
+      - site_id is match('^[a-z0-9]{3,16}$')
+    fail_msg: "domain (a plain lowercase domain name) and site_id (3-16 lowercase letters or digits) are required for add_domain"
     success_msg: "All required variables are properly defined"
   tags: add_domain
 

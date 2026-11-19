@@ -15,6 +15,9 @@
     password: '{{ db_pass }}'
     priv: '{{ db_name }}.*:ALL'
     host: 'localhost'
+    # One busy or broken site can't take every database connection on the server.
+    resource_limits:
+      MAX_USER_CONNECTIONS: '{{ [site_db_max_user_connections | int, (site_php_pm_max_children | int) + 10] | max }}'
     state: present
     login_host: "{{ db_host.split(':')[0] }}"
     login_port: "{{ db_host.split(':')[1] | default('3306') }}"

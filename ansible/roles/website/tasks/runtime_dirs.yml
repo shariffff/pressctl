@@ -1,0 +1,32 @@
+---
+# Directories a site's PHP-FPM pool needs before it can start: its private
+# temp/session directory and its root-owned log directory (PHP-FPM refuses to
+# start if the slow log's directory is missing). Used by files.yml and
+# playbooks/pool_includes.yml.
+#
+# Needs: domain, site_user, site_group, site_home.
+
+# PHP's temp files and sessions. A dot-directory of the platform's own, not
+# ~/tmp: the daily cleanup (php/tasks/hardening.yml) empties it, and ~/tmp may
+# hold the customer's own files. Created as the site user (it is inside the
+# site's home; see files.yml).
+- name: Ensure the site's PHP temp and session directories exist
+  become_user: "{{ site_user }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ site_user }}"
+    group: "{{ site_group }}"
+    mode: "0700"
+    follow: false
+  loop:
+    - "{{ site_home }}/.php-tmp"
+    - "{{ site_home }}/.php-tmp/sessions"
+
+- name: Set up the site's web log directory and log format
+  ansible.builtin.include_role:
+    name: libs
+    tasks_from: site_web_logs.yml
+  vars:
+    site_log_domain: "{{ domain }}"
+    site_log_group: "{{ site_group }}"

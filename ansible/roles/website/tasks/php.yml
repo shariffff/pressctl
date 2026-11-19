@@ -9,6 +9,17 @@
     state: present
   become: true
 
+# The pool's extra settings live outside the site's home: the site's own user
+# owns its home, and could otherwise replace the file (for example with
+# `user = <another site>`) and have PHP-FPM run as someone else on its next reload.
+- name: Create the pool settings directory
+  ansible.builtin.file:
+    path: /etc/pressctl/pool-includes
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
 # Create per-site PHP-FPM pool configuration
 # Each site gets its own pool with isolated resources
 - name: Configure PHP-FPM pool for site
@@ -23,7 +34,7 @@
         src: 'pool.conf.j2',
         dest: '/etc/php/{{ php_version }}/fpm/pool.d/{{ site_id }}.conf',
       }
-    - { src: 'pressctl-pool.conf.j2', dest: '{{ site_home }}/.pressctl-pool.conf' }
+    - { src: 'pressctl-pool.conf.j2', dest: '/etc/pressctl/pool-includes/{{ site_id }}.conf' }
   notify: Reload php-fpm
 
 # Flush handlers to ensure PHP-FPM picks up the new pool before nginx starts using it

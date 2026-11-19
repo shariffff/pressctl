@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# Redis for the sites' object caches (pressctl). The server's own Redis on
+# 127.0.0.1:6379 is a separate instance and is not touched by this one.
+port 0
+unixsocket {{ redis_sites_socket }}
+unixsocketperm 770
+supervised systemd
+daemonize no
+logfile ""
+# Each site is a Redis user that can only touch keys starting "<site id>:"
+# (see /etc/pressctl/redis/users.d/, assembled into this file).
+aclfile /etc/redis/sites-users.acl
+databases 1
+# A cache: evict the least recently used keys when full, keep nothing on disk.
+maxmemory {{ redis_sites_maxmemory }}
+maxmemory-policy allkeys-lru
+save ""
+appendonly no
+dir /var/lib/redis-sites

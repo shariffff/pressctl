@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""Which site is slow? A per-site summary of the last N minutes.
+
+Reads what pressctl already records on the server:
+  * nginx access logs   /var/log/pressctl/sites/<domain>/access.log
+                        (rt= total time, urt= PHP time, cache= page cache status)
+  * PHP-FPM slow logs   /var/log/pressctl/sites/<domain>/php-slow.log
+  * PHP-FPM log         /var/log/php<version>-fpm.log ("reached max_children")
+  * PHP-FPM status      each pool's /pressctl-fpm-status page (over its socket)
+  * MariaDB slow log    /var/log/mysql/mariadb-slow.log (database user = site)
+
+Usage: pressctl-site-stats [--minutes 60] [--site example.com] [--sort p95|php|req|slow]
+                           [--slow-traces] [--json]
+"""
+import argparse
+import glob
+import gzip
+import json
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+
+LOG_ROOT = "/var/log/pressctl/sites"
+SITES_ROOT = "/sites"
+MYSQL_SLOW = "/var/log/mysql/mariadb-slow.log"
+
+ACCESS_RE = re.compile(
+    r'^\S+ \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<req>[^"]*)" (?P<status>\d{3}) \S+ '
+    r'"[^"]*" "[^"]*" rt=(?P<rt>[\d.]+) urt=(?P<urt>\S+) cache=(?P<cache>\S*)'
+)
+SLOW_HEAD_RE = re.compile(r"^\[(?P<time>\d{2}-\w{3}-\d{4} \d{2}:\d{2}:\d{2})\]\s+\[pool (?P<pool>[^\]]+)\] pid \d+")
+SLOW_SCRIPT_RE = re.compile(r"^script_filename = (?P<script>.+)$")
+SLOW_FRAME_RE = re.compile(r"^\[0x[0-9a-f]+\] (?P<func>\S+) (?P<file>\S+):(?P<line>\d+)$")
+FPM_LOG_RE = re.compile(r"^\[(?P<time>\d{2}-\w{3}-\d{4} \d{2}:\d{2}:\d{2})\] WARNING: \[pool (?P<pool>[^\]]+)\] server reached (?:pm\.)?max_children")
+MYSQL_TIME_RE = re.compile(r"^# Time: (?P<time>.+)$")
+MYSQL_USER_RE = re.compile(r"^# User@Host: (?P<user>[^\[]+)\[")
+MYSQL_QT_RE = re.compile(r"^# Query_time: (?P<qt>[\d.]+)")
+
+
+def percentile(values, pct):
+    if not values:
+        return None
+    values = sorted(values)
+    k = (len(values) - 1) * pct / 100.0
+    lo = int(k)
+    hi = min(lo + 1, len(values) - 1)
+    return values[lo] + (values[hi] - values[lo]) * (k - lo)
+
+
+def open_log(path):
+    if path.endswith(".gz"):
+        return gzip.open(path, "rt", errors="replace")
+    return open(path, "r", errors="replace")
+
+
+def recent_files(pattern):
+    """The current log and the most recent rotated one (covers a rotation inside the window)."""
+    files = []
+    for path in (pattern, pattern + ".1"):
+        if os.path.exists(path):
+            files.append(path)
+    return files
+
+
+def site_of_pool():
+    """Map PHP-FPM pool name (site id) -> domain, from the owners of /sites/<domain>."""
+    mapping = {}
+    for path in glob.glob(os.path.join(SITES_ROOT, "*")):
+        if not os.path.isdir(path) or os.path.basename(path).startswith("."):
+            continue
+        try:
+            import pwd
+            owner = pwd.getpwuid(os.stat(path).st_uid).pw_name
+        except (KeyError, OSError):
+            continue
+        mapping[owner] = os.path.basename(path)
+    return mapping
+
+
+def db_users():
+    """Map database user -> domain, from each site's wp-config.php."""
+    mapping = {}
+    for cfg in glob.glob(os.path.join(SITES_ROOT, "*", "files", "wp-config.php")):
+        domain = cfg.split(os.sep)[2]
+        try:
+            with open(cfg, errors="replace") as fh:
+                m = re.search(r"define\(\s*['\"]DB_USER['\"]\s*,\s*['\"]([^'\"]+)['\"]", fh.read())
+        except OSError:
+            continue
+        if m:
+            mapping[m.group(1)] = domain
+    return mapping
+
+
+def scan_access(domain, since, stats):
+    for path in recent_files(os.path.join(LOG_ROOT, domain, "access.log")):
+        with open_log(path) as fh:
+            for line in fh:
+                m = ACCESS_RE.match(line)
+                if not m:
+                    continue
+                try:
+                    t = datetime.strptime(m.group("time"), "%d/%b/%Y:%H:%M:%S %z")
+                except ValueError:
+                    continue
+                if t < since:
+                    continue
+                s = stats[domain]
+                s["requests"] += 1
+                s["rt"].append(float(m.group("rt")))
+                urt = m.group("urt").split(",")[-1].strip()
+                if urt not in ("-", ""):
+                    try:
+                        s["urt"].append(float(urt))
+                    except ValueError:
+                        pass
+                cache = m.group("cache")
+                if cache in ("HIT", "STALE", "UPDATING", "REVALIDATED"):
+                    s["cache_hit"] += 1
+                elif cache in ("MISS", "EXPIRED", "BYPASS"):
+                    s["cache_miss"] += 1
+                status = int(m.group("status"))
+                if status >= 500:
+                    s["5xx"] += 1
+                elif status == 429:
+                    s["429"] += 1
+                req = m.group("req").split(" ")
+                if len(req) >= 2:
+                    path_only = req[1].split("?")[0]
+                    s["paths"][path_only].append(float(m.group("rt")))
+
+
+def scan_php_slow(domain, since, stats, local_tz):
+    for path in recent_files(os.path.join(LOG_ROOT, domain, "php-slow.log")):
+        with open_log(path) as fh:
+            current = None
+            for line in fh:
+                line = line.rstrip("\n")
+                m = SLOW_HEAD_RE.match(line)
+                if m:
+                    t = datetime.strptime(m.group("time"), "%d-%b-%Y %H:%M:%S").replace(tzinfo=local_tz)
+                    current = {"time": t, "script": "", "frames": []} if t >= since else None
+                    if current:
+                        stats[domain]["php_slow"].append(current)
+                    continue
+                if current is None:
+                    continue
+                m = SLOW_SCRIPT_RE.match(line)
+                if m:
+                    current["script"] = m.group("script")
+                    continue
+                m = SLOW_FRAME_RE.match(line)
+                if m:
+                    current["frames"].append("%s %s:%s" % (m.group("func"), m.group("file"), m.group("line")))
+
+
+def scan_fpm_log(since, pools, stats, local_tz):
+    for path in glob.glob("/var/log/php*-fpm.log"):
+        for p in recent_files(path):
+            with open_log(p) as fh:
+                for line in fh:
+                    m = FPM_LOG_RE.match(line)
+                    if not m:
+                        continue
+                    t = datetime.strptime(m.group("time"), "%d-%b-%Y %H:%M:%S").replace(tzinfo=local_tz)
+                    if t >= since and m.group("pool") in pools:
+                        stats[pools[m.group("pool")]]["max_children_hits"] += 1
+
+
+def fpm_status(pools, stats):
+    for sock in glob.glob("/run/php/php*-*.sock"):
+        pool = re.sub(r"^php[\d.]+-", "", os.path.basename(sock))[:-5]
+        domain = pools.get(pool)
+        if not domain:
+            continue
+        # A minimal environment: cgi-fcgi sends every variable as a FastCGI
+        # parameter, and a large login environment makes PHP-FPM drop the request.
+        env = {"PATH": "/usr/bin:/bin", "SCRIPT_NAME": "/pressctl-fpm-status",
+               "SCRIPT_FILENAME": "/pressctl-fpm-status", "REQUEST_URI": "/pressctl-fpm-status",
+               "QUERY_STRING": "json", "REQUEST_METHOD": "GET"}
+        try:
+            out = subprocess.run(["cgi-fcgi", "-bind", "-connect", sock], env=env, capture_output=True,
+                                 timeout=3).stdout.decode(errors="replace")
+            body = out.split("\r\n\r\n", 1)[-1]
+            data = json.loads(body)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
+        stats[domain]["fpm"] = {
+            "active": data.get("active processes"),
+            "idle": data.get("idle processes"),
+            "queue": data.get("listen queue"),
+            "max_children_reached": data.get("max children reached"),
+        }
+
+
+def scan_mysql_slow(since, users, stats):
+    for path in recent_files(MYSQL_SLOW):
+        try:
+            fh = open_log(path)
+        except OSError:
+            continue
+        with fh:
+            t = None
+            user = None
+            for line in fh:
+                m = MYSQL_TIME_RE.match(line)
+                if m:
+                    raw = m.group("time").strip()
+                    t = None
+                    for fmt in ("%y%m%d %H:%M:%S", "%y%m%d  %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f%z"):
+                        try:
+                            t = datetime.strptime(raw, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    if t is not None and t.tzinfo is None:
+                        t = t.replace(tzinfo=datetime.now().astimezone().tzinfo)
+                    continue
+                m = MYSQL_USER_RE.match(line)
+                if m:
+                    user = m.group("user").strip()
+                    continue
+                m = MYSQL_QT_RE.match(line)
+                if m and user in users and (t is None or t >= since):
+                    s = stats[users[user]]
+                    s["db_slow"] += 1
+                    s["db_slow_time"] += float(m.group("qt"))
+
+
+def fmt(v, unit="s"):
+    if v is None:
+        return "-"
+    return ("%.2f" % v) + unit
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Per-site speed summary (which site is slow).")
+    ap.add_argument("--minutes", type=int, default=60, help="look back this many minutes (default 60)")
+    ap.add_argument("--site", help="only this domain")
+    ap.add_argument("--sort", choices=["p95", "php", "req", "slow"], default="p95")
+    ap.add_argument("--slow-traces", action="store_true", help="show where slow PHP requests spent their time")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    if os.geteuid() != 0:
+        sys.exit("pressctl-site-stats needs root (it reads every site's logs).")
+
+    local_tz = datetime.now().astimezone().tzinfo
+    since = datetime.now(timezone.utc) - timedelta(minutes=args.minutes)
+    pools = site_of_pool()
+    domains = sorted(d for d in os.listdir(LOG_ROOT) if os.path.isdir(os.path.join(LOG_ROOT, d))) \
+        if os.path.isdir(LOG_ROOT) else []
+    if args.site:
+        domains = [d for d in domains if d == args.site]
+        pools = {p: d for p, d in pools.items() if d == args.site}
+
+    stats = defaultdict(lambda: {
+        "requests": 0, "rt": [], "urt": [], "cache_hit": 0, "cache_miss": 0, "5xx": 0, "429": 0,
+        "paths": defaultdict(list), "php_slow": [], "max_children_hits": 0, "fpm": None,
+        "db_slow": 0, "db_slow_time": 0.0,
+    })
+    for domain in domains:
+        scan_access(domain, since, stats)
+        scan_php_slow(domain, since, stats, local_tz)
+    scan_fpm_log(since, pools, stats, local_tz)
+    fpm_status(pools, stats)
+    users = {u: d for u, d in db_users().items() if not args.site or d == args.site}
+    scan_mysql_slow(since, users, stats)
+
+    rows = []
+    for domain in sorted(set(domains) | set(stats)):
+        s = stats[domain]
+        cached = s["cache_hit"] + s["cache_miss"]
+        slow_paths = sorted(((percentile(v, 95), p, len(v)) for p, v in s["paths"].items() if len(v) >= 3),
+                            reverse=True)[:3]
+        rows.append({
+            "site": domain,
+            "requests": s["requests"],
+            "p50": percentile(s["rt"], 50),
+            "p95": percentile(s["rt"], 95),
+            "php_p95": percentile(s["urt"], 95),
+            "cache_hit_pct": round(100.0 * s["cache_hit"] / cached, 1) if cached else None,
+            "errors_5xx": s["5xx"],
+            "rate_limited": s["429"],
+            "php_slow": len(s["php_slow"]),
+            "max_children_hits": s["max_children_hits"],
+            "fpm": s["fpm"],
+            "db_slow_queries": s["db_slow"],
+            "db_slow_seconds": round(s["db_slow_time"], 1),
+            "slowest_paths": [{"path": p, "p95": round(v, 3), "requests": n} for v, p, n in slow_paths],
+            "slow_traces": [{"time": x["time"].isoformat(), "script": x["script"], "frames": x["frames"][:6]}
+                            for x in s["php_slow"][-5:]],
+        })
+
+    key = {"p95": lambda r: r["p95"] or 0, "php": lambda r: r["php_p95"] or 0,
+           "req": lambda r: r["requests"], "slow": lambda r: r["php_slow"] + r["db_slow_queries"]}[args.sort]
+    rows.sort(key=key, reverse=True)
+
+    if args.json:
+        print(json.dumps({"minutes": args.minutes, "sites": rows}, indent=2))
+        return
+
+    print("Last %d minutes (sorted by %s). Times are seconds; PHP = time PHP took (cache misses only).\n"
+          % (args.minutes, args.sort))
+    head = "%-34s %7s %7s %7s %7s %6s %5s %5s %6s %6s %7s %s" % (
+        "SITE", "REQS", "P50", "P95", "PHP95", "CACHE", "5XX", "429", "SLOWPHP", "MAXCH", "DBSLOW", "PHP NOW (busy/idle/queue)")
+    print(head)
+    print("-" * len(head))
+    for r in rows:
+        fpm = r["fpm"]
+        now = "%s/%s/%s" % (fpm["active"], fpm["idle"], fpm["queue"]) if fpm else "-"
+        print("%-34s %7d %7s %7s %7s %6s %5d %5d %6d %6d %7d %s" % (
+            r["site"][:34], r["requests"], fmt(r["p50"], ""), fmt(r["p95"], ""), fmt(r["php_p95"], ""),
+            ("%.0f%%" % r["cache_hit_pct"]) if r["cache_hit_pct"] is not None else "-",
+            r["errors_5xx"], r["rate_limited"], r["php_slow"], r["max_children_hits"], r["db_slow_queries"], now))
+        for sp in r["slowest_paths"]:
+            print("    slowest: %-50s p95 %.2fs over %d requests" % (sp["path"][:50], sp["p95"], sp["requests"]))
+        if args.slow_traces:
+            for tr in r["slow_traces"]:
+                print("    slow PHP at %s  %s" % (tr["time"], tr["script"]))
+                for fr in tr["frames"]:
+                    print("        %s" % fr)
+    print("\nMAXCH = times the site ran out of PHP workers (raise site_php_pm_max_children or find the slow code).")
+    print("SLOWPHP = requests slower than the slow-log threshold; --slow-traces shows the plugin code they were in.")
+    print("DBSLOW = queries over long_query_time from the site's database user.")
+
+
+if __name__ == "__main__":
+    main()

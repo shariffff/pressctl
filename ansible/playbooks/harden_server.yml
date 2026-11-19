@@ -1,0 +1,155 @@
+---
+# Bring an existing server up to the current hardening and tuning, and apply
+# it to every site already on it. New servers and sites get all of this from
+# provision.yml / website.yml. Safe to re-run.
+#
+#   ansible-playbook playbooks/harden_server.yml -i "IP," -u root
+#
+# What it does:
+#   Server  nginx: site logs in /var/log/pressctl (root-owned), timing log
+#                  format, login rate limit, Cloudflare real IP, open-file limit
+#           PHP:   OPcache sized for many sites + permission checks, PHP-FPM
+#                  service sandbox, per-site temp cleanup, root-only pool dir
+#           Redis: a separate instance for the sites' object caches
+#           MariaDB: buffer pool by RAM, table caches, slow query log,
+#                  per-site connection cap
+#           fail2ban jail for WordPress logins, automatic security updates,
+#           pressctl-site-stats, the SSH/cron sandbox
+#   Per site: logs moved out of the home, page cache on, on-demand PHP
+#           workers, open_basedir + private temp/sessions, slow log, wp-cron
+#           in the sandbox at its own minute, DISALLOW_FILE_EDIT, Redis
+#           account (settings written; the plugin is not switched on here)
+- name: Harden the server and its sites
+  hosts: all
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    # ── Server ──
+    - name: Apply the SSH and cron sandbox
+      ansible.builtin.include_role:
+        name: security
+        tasks_from: site_ssh.yml
+
+    - name: Apply the nginx setup (log format, rate limit, real IP)
+      ansible.builtin.include_role:
+        name: nginx
+
+    - name: Apply the PHP-FPM hardening and OPcache settings
+      ansible.builtin.include_role:
+        name: php
+        tasks_from: hardening.yml
+
+    - name: Set up the sites' Redis
+      ansible.builtin.include_role:
+        name: bootstrap
+        tasks_from: redis_sites.yml
+
+    - name: Apply the WordPress bans, automatic updates and site stats
+      ansible.builtin.include_role:
+        name: security
+        tasks_from: hardening.yml
+
+    - name: Create the MariaDB log directory (for the slow query log)
+      ansible.builtin.file:
+        path: /var/log/mysql
+        state: directory
+        owner: mysql
+        group: adm
+        mode: "2750"
+
+    - name: Tune MariaDB
+      ansible.builtin.template:
+        src: ../roles/database/templates/pressctl.cnf.j2
+        dest: /etc/mysql/conf.d/pressctl.cnf
+        mode: "0644"
+      register: mariadb_cnf
+
+    - name: Raise MariaDB's open-file limit
+      ansible.builtin.template:
+        src: ../roles/database/templates/override.conf.j2
+        dest: /etc/systemd/system/mariadb.service.d/override.conf
+        mode: "0644"
+      register: mariadb_unit
+
+    - name: Restart MariaDB with the new settings
+      ansible.builtin.systemd:
+        name: mariadb
+        state: restarted
+        daemon_reload: "{{ mariadb_unit.changed }}"
+      when: (mariadb_cnf.changed or mariadb_unit.changed) and not ansible_check_mode
+
+    - name: Cap each site's database connections
+      ansible.builtin.include_role:
+        name: database
+        tasks_from: site_limits.yml
+
+    # ── Sites ──
+    - name: Find the sites
+      ansible.builtin.find:
+        paths: /sites
+        file_type: directory
+        depth: 1
+        hidden: false
+      register: harden_site_dirs
+
+    - name: Find the PHP-FPM pools
+      ansible.builtin.find:
+        paths: /etc/php
+        patterns: "*.conf"
+        recurse: true
+      register: harden_pool_files
+
+    - name: Note which PHP version each site's pool runs on
+      ansible.builtin.set_fact:
+        harden_pool_versions: >-
+          {{ dict(harden_pool_files.files | map(attribute='path')
+                  | select('search', '/fpm/pool\.d/') | reject('search', '/www\.conf$')
+                  | map('regex_replace', '^/etc/php/([^/]+)/fpm/pool\.d/(.+)\.conf$', '\2=\1')
+                  | map('split', '=') | list) }}
+
+    - name: Harden each site
+      ansible.builtin.include_tasks: tasks/harden_one_site.yml
+      loop: "{{ harden_site_dirs.files | selectattr('pw_name', 'in', harden_pool_versions.keys() | list) | list }}"
+      loop_control:
+        loop_var: harden_site
+        label: "{{ harden_site.path | basename }}"
+
+    # ── Apply once for all sites ──
+    - name: Check the nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      when: not ansible_check_mode
+
+    - name: Check every PHP-FPM configuration
+      ansible.builtin.shell: |
+        set -e
+        for v in $(ls /etc/php); do
+          [ -x /usr/sbin/php-fpm$v ] && /usr/sbin/php-fpm$v -t
+        done
+      changed_when: false
+      when: not ansible_check_mode
+
+    # Restart, not reload: site users joined the redis-sites group, and new
+    # groups only reach PHP workers started by a fresh master.
+    - name: Restart PHP-FPM
+      ansible.builtin.shell: |
+        for v in $(ls /etc/php); do
+          systemctl is-active --quiet php$v-fpm && systemctl restart php$v-fpm
+        done
+        true
+      when: not ansible_check_mode
+
+    - name: Let fail2ban watch every site's access log
+      ansible.builtin.command: fail2ban-client reload pressctl-wordpress
+      changed_when: false
+      failed_when: false
+      when: not ansible_check_mode

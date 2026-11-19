@@ -1,0 +1,146 @@
+---
+# The site's own account on the sites' Redis (object cache). The account can
+# only read and write keys starting "<site id>:" and can't run admin commands
+# or flush the whole cache. Credentials go into wp-config.php as the
+# WP_REDIS_* settings the Redis Object Cache plugin reads.
+- name: Check that the sites' Redis is set up
+  ansible.builtin.stat:
+    path: /etc/pressctl/redis/users.d
+  register: site_redis_ready
+
+- name: Skip the object cache when the sites' Redis isn't set up
+  ansible.builtin.debug:
+    msg: "The sites' Redis isn't installed on this server (run playbooks/harden_server.yml); skipping the object cache."
+  when: not site_redis_ready.stat.exists
+
+- name: Set up the site's Redis account
+  when: site_redis_ready.stat.exists
+  block:
+    # Group access to the Redis socket. PHP-FPM picks up the new group on its
+    # next reload; logins and cron on their next start.
+    - name: Let the site user reach the sites' Redis socket
+      ansible.builtin.user:
+        name: "{{ site_user }}"
+        groups: redis-sites
+        append: true
+      register: site_redis_group
+
+    - name: Create the site's Redis password
+      ansible.builtin.shell: |
+        set -eu
+        umask 077
+        f=/etc/pressctl/redis/{{ site_id }}.pass
+        [ -s "$f" ] && exit 0
+        openssl rand -hex 24 > "$f"
+        echo created
+      register: site_redis_pass_created
+      changed_when: "'created' in site_redis_pass_created.stdout"
+
+    - name: Read the site's Redis password
+      ansible.builtin.slurp:
+        src: "/etc/pressctl/redis/{{ site_id }}.pass"
+      register: site_redis_pass_raw
+      no_log: true
+
+    - name: Note the site's Redis credentials
+      ansible.builtin.set_fact:
+        site_redis_pass: "{{ site_redis_pass_raw.content | b64decode | trim }}"
+      no_log: true
+
+    # KEYS isn't in @dangerous in Redis 7 but walks every site's keys, so it's
+    # denied too. SCAN stays (the plugin's flush of the site's own keys needs
+    # it); it can list key names, never values, of other sites.
+    - name: Write the site's Redis account
+      ansible.builtin.copy:
+        dest: "/etc/pressctl/redis/users.d/{{ site_id }}.acl"
+        owner: root
+        group: root
+        mode: "0600"
+        content: >
+          user {{ site_id }} on #{{ site_redis_pass | hash('sha256') }}
+          resetkeys ~{{ site_id }}:* resetchannels &{{ site_id }}:*
+          +@all -@admin -@dangerous -keys +info
+      no_log: true
+
+    - name: Assemble the Redis account file
+      ansible.builtin.assemble:
+        src: /etc/pressctl/redis/users.d
+        dest: /etc/redis/sites-users.acl
+        regexp: '\.acl$'
+        owner: root
+        group: redis
+        mode: "0640"
+      register: site_redis_acl
+
+    - name: Read the Redis admin password
+      ansible.builtin.slurp:
+        src: /etc/pressctl/redis/admin.pass
+      register: site_redis_admin_pass
+      no_log: true
+      when: site_redis_acl.changed
+
+    - name: Load the Redis accounts
+      ansible.builtin.command: redis-cli -s {{ redis_sites_socket }} --user pressctl-admin ACL LOAD
+      environment:
+        REDISCLI_AUTH: "{{ site_redis_admin_pass.content | b64decode | trim }}"
+      register: site_redis_load
+      failed_when: site_redis_load.rc != 0 or 'OK' not in site_redis_load.stdout
+      when: site_redis_acl.changed and not ansible_check_mode
+      no_log: true
+
+    - name: Read the site's wp-config.php
+      ansible.builtin.slurp:
+        src: "{{ site_home }}/files/wp-config.php"
+      register: site_wp_config_raw
+      when: site_wp_config.stat.exists
+      no_log: true
+
+    # Compare with the define() lines as wp-cli writes them, so a re-run
+    # changes nothing when the settings are already there.
+    - name: Write the Redis settings into wp-config.php
+      become_user: "{{ site_user }}"
+      ansible.builtin.command:
+        argv: ["wp", "config", "set", "{{ item.name }}", "{{ item.value }}", "--raw", "--type=constant"]
+      args:
+        chdir: "{{ site_home }}/files"
+      loop:
+        - { name: WP_REDIS_SCHEME, value: "'unix'" }
+        - { name: WP_REDIS_PATH, value: "'{{ redis_sites_socket }}'" }
+        - { name: WP_REDIS_PASSWORD, value: "['{{ site_id }}', '{{ site_redis_pass }}']" }
+        - { name: WP_REDIS_PREFIX, value: "'{{ site_id }}:'" }
+        - { name: WP_REDIS_DATABASE, value: "0" }
+        - { name: WP_REDIS_SELECTIVE_FLUSH, value: "true" }
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - site_wp_config.stat.exists
+        - >-
+          not (site_wp_config_raw.content | b64decode) is search(
+            "define\\(\\s*'" ~ item.name ~ "',\\s*" ~ (item.value | regex_escape) ~ "\\s*\\);")
+      no_log: true
+
+    # New sites get the Redis Object Cache plugin switched on. An existing site
+    # that already has an object-cache.php (another cache plugin) is left alone.
+    - name: Check for an object cache already in use
+      ansible.builtin.stat:
+        path: "{{ site_home }}/files/wp-content/object-cache.php"
+      register: site_object_cache_dropin
+
+    - name: Install and switch on the Redis Object Cache plugin
+      become_user: "{{ site_user }}"
+      ansible.builtin.shell: |
+        set -e
+        wp plugin is-installed redis-cache || wp plugin install redis-cache
+        wp plugin activate redis-cache
+        # `wp redis enable` sends FLUSHDB, which the site's Redis account may
+        # not run (it would empty every site's cache). Install the plugin's
+        # drop-in directly, then flush only this site's keys through it.
+        cp wp-content/plugins/redis-cache/includes/object-cache.php wp-content/object-cache.php
+        wp cache flush
+      args:
+        chdir: "{{ site_home }}/files"
+      when:
+        - site_redis_activate_plugin | bool
+        - site_wp_config.stat.exists
+        - not site_object_cache_dropin.stat.exists
+        - not ansible_check_mode

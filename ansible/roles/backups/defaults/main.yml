@@ -1,0 +1,9 @@
+---
+# Set these (extra vars file kept outside git) before applying playbooks/kopia_backups.yml:
+#   kopia_password:       encrypts the repository; losing it loses every backup
+#   kopia_s3_bucket / kopia_s3_endpoint / kopia_s3_access_key / kopia_s3_secret_key
+#   kopia_s3_prefix:      per-server folder in the bucket, e.g. "instant/bd-pool/"
+#   kopia_s3_region:      optional (R2 uses "auto")
+kopia_s3_region: ""
+backup_hour: 2
+backup_minute: 30

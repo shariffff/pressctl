@@ -1,0 +1,190 @@
+<?php
+/**
+ * {{ ansible_managed }}
+ *
+ * WordSail SSO-guarded entry point for the elFinder file manager.
+ *
+ * Every request (the page itself, every connector call, every upload and
+ * download) comes through this file and the SSO guard. A GET without `cmd`
+ * returns the page; anything else is handed to elFinder's connector.
+ *
+ * elFinder's code is shared by every site and lives root-owned in
+ * {{ elfinder_home }}; its browser files are served by nginx under
+ * /filemanager/assets/. Nothing in this site's web root belongs to elFinder.
+ */
+
+require dirname(__DIR__) . '/sso-guard.php';
+wordsail_tool_sso_guard('filemanager');
+
+// Never let proxies or browsers cache file listings or downloads.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-Frame-Options: SAMEORIGIN');
+header('Referrer-Policy: no-referrer');
+
+const WORDSAIL_ELFINDER_HOME = '{{ elfinder_home }}';
+const WORDSAIL_ELFINDER_ROOT = '{{ filemanager_root }}';
+const WORDSAIL_ELFINDER_TEMP = __DIR__ . '/.tmp';
+
+if (isset($_GET['cmd']) || ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    wordsail_elfinder_csrf_check();
+    wordsail_elfinder_connector();
+    exit;
+}
+
+/**
+ * The only credential is the SameSite=Lax tool cookie, which browsers also
+ * send on a link or redirect from another site. Block that from changing
+ * anything:
+ *
+ * 1. A request the browser marks as cross-site (Sec-Fetch-Site) is refused.
+ * 2. Only read-only commands may use GET; everything else needs POST (405).
+ * 3. Every connector request needs X-Requested-With: XMLHttpRequest, which a
+ *    cross-site link or form cannot add (403). Plain `cmd=file` and the zip
+ *    download step (`cmd=zipdl&download=1`) are exempt because they open in a
+ *    new tab or frame; both are read-only.
+ * 4. A POST that carries Origin or Referer must come from this site (403).
+ */
+function wordsail_elfinder_csrf_check(): void
+{
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $cmd = (string) ($_REQUEST['cmd'] ?? '');
+
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site') {
+        wordsail_elfinder_fail(403, 'Cross-site request blocked.');
+    }
+
+    $readOnly = array('open', 'file', 'ls', 'tree', 'parents', 'info', 'size', 'dim',
+                      'search', 'get', 'tmb', 'url', 'zipdl');
+    if ($method !== 'POST' && !($method === 'GET' && in_array($cmd, $readOnly, true))) {
+        header('Allow: POST');
+        wordsail_elfinder_fail(405, 'Method not allowed.');
+    }
+
+    $isDownload = $method === 'GET'
+        && ($cmd === 'file' || ($cmd === 'zipdl' && !empty($_GET['download'])));
+    if (!$isDownload && ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
+        wordsail_elfinder_fail(403, 'Missing request header.');
+    }
+
+    if ($method === 'POST') {
+        $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        foreach (array('HTTP_ORIGIN', 'HTTP_REFERER') as $key) {
+            if (!isset($_SERVER[$key]) || $_SERVER[$key] === '') {
+                continue;
+            }
+            $from = parse_url((string) $_SERVER[$key], PHP_URL_HOST);
+            $port = parse_url((string) $_SERVER[$key], PHP_URL_PORT);
+            if (is_string($from) && $port) {
+                $from .= ':' . $port;
+            }
+            if (!is_string($from) || $host === '' || strtolower($from) !== $host) {
+                wordsail_elfinder_fail(403, 'Cross-site request blocked.');
+            }
+        }
+    }
+}
+
+function wordsail_elfinder_fail(int $status, string $message): void
+{
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array('error' => $message));
+    exit;
+}
+
+/**
+ * Hide dot-files (.htaccess, .user.ini, .git, ...) like the old file manager
+ * did: not listed, not readable, not writable. Returning null leaves every
+ * other path to the volume's defaults.
+ */
+function wordsail_elfinder_access($attr, $path, $data, $volume, $isDir, $relpath)
+{
+    $basename = basename($path);
+    if ($basename !== '' && $basename[0] === '.' && strlen($relpath) !== 1) {
+        return !($attr === 'read' || $attr === 'write');
+    }
+    return null;
+}
+
+function wordsail_elfinder_connector(): void
+{
+    require WORDSAIL_ELFINDER_HOME . '/php/autoload.php';
+
+    // No network volumes (Dropbox, FTP, ...): only this site's own files.
+    elFinder::$netDrivers = array();
+
+    $opts = array(
+        // Temporary files (uploads in progress, zip downloads) stay out of
+        // the web root, in this site's private tools directory.
+        'commonTempPath' => WORDSAIL_ELFINDER_TEMP,
+        'uploadTempPath' => WORDSAIL_ELFINDER_TEMP,
+        'roots' => array(
+            array(
+                'driver' => 'LocalFileSystem',
+                'path' => WORDSAIL_ELFINDER_ROOT,
+                'alias' => '{{ domain }}',
+                // No direct URLs: files are opened and downloaded through this
+                // guarded connector, so PHP files are never run by "opening" them.
+                'URL' => '',
+                // Thumbnails are drawn in the browser, nothing is stored on disk.
+                'tmbPath' => '',
+                'tmbURL' => 'self',
+                'tmpPath' => WORDSAIL_ELFINDER_TEMP,
+                'quarantine' => WORDSAIL_ELFINDER_TEMP,
+                // Archive create/extract has been elFinder's weakest point;
+                // folders can still be downloaded as a zip.
+                'disabled' => array('archive', 'extract', 'netmount'),
+                'accessControl' => 'wordsail_elfinder_access',
+                'winHashFix' => false,
+            ),
+        ),
+    );
+
+    $connector = new elFinderConnector(new elFinder($opts));
+    $connector->run();
+}
+
+$assets = '/filemanager/assets';
+$v = '?v={{ elfinder_version }}';
+?><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Files &middot; {{ domain }}</title>
+    <link rel="stylesheet" href="<?= $assets ?>/jquery-ui/themes/smoothness/jquery-ui.min.css<?= $v ?>">
+    <link rel="stylesheet" href="<?= $assets ?>/elfinder/css/elfinder.min.css<?= $v ?>">
+    <link rel="stylesheet" href="<?= $assets ?>/elfinder/css/theme.css<?= $v ?>">
+    <style>html, body { margin: 0; height: 100%; } #elfinder { height: 100%; border: 0; border-radius: 0; }</style>
+    <script src="<?= $assets ?>/jquery/jquery.min.js<?= $v ?>"></script>
+    <script src="<?= $assets ?>/jquery-ui/jquery-ui.min.js<?= $v ?>"></script>
+    <script src="<?= $assets ?>/elfinder/js/elfinder.min.js<?= $v ?>"></script>
+</head>
+<body>
+<div id="elfinder"></div>
+<script>
+$(function () {
+    $('#elfinder').elfinder({
+        url: '/filemanager/index.php',
+        // Commands that change files are only accepted as POST (see
+        // wordsail_elfinder_reject_cross_site).
+        requestType: 'post',
+        baseUrl: '<?= $assets ?>/elfinder/',
+        cssAutoLoad: false,
+        lang: 'en',
+        height: '100%',
+        resizable: false,
+        // Required by the CSRF check above; jQuery sends it already, this
+        // makes it explicit.
+        customHeaders: { 'X-Requested-With': 'XMLHttpRequest' },
+        rememberLastDir: true
+    });
+    $(window).on('resize', function () {
+        $('#elfinder').elfinder('instance').resize('100%', $(window).height());
+    });
+});
+</script>
+</body>
+</html>

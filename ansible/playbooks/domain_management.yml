@@ -13,10 +13,11 @@
       ansible.builtin.assert:
         that:
           - operation is defined and operation | length > 0
-          - operation in ['add_domain', 'remove_domain', 'issue_ssl']
+          - operation in ['add_domain', 'remove_domain', 'issue_ssl', 'add_alias', 'issue_alias_ssl', 'remove_alias', 'set_primary']
         fail_msg: |
           Invalid or missing operation. Please provide:
-            - operation: One of 'add_domain', 'remove_domain', or 'issue_ssl'
+            - operation: One of 'add_domain', 'remove_domain', 'issue_ssl',
+              'add_alias', 'issue_alias_ssl', 'remove_alias' or 'set_primary'
           Pass via --extra-vars "operation=add_domain"
 
   tasks:
@@ -40,6 +41,13 @@
         tasks_from: issue_ssl.yml
       when: operation == 'issue_ssl'
       tags: issue_ssl
+
+    - name: Manage an extra domain of an existing site
+      ansible.builtin.include_role:
+        name: libs
+        tasks_from: alias_domain.yml
+      when: operation in ['add_alias', 'issue_alias_ssl', 'remove_alias', 'set_primary']
+      tags: [add_alias, issue_alias_ssl, remove_alias, set_primary]
 
     - name: Reload Nginx configuration
       ansible.builtin.service:

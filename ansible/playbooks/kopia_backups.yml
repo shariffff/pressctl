@@ -1,0 +1,11 @@
+---
+# Install Kopia backups on a server (nightly backup of every site, on-demand
+# backups and restores through pressctl-api). Safe to re-run.
+#
+#   ansible-playbook playbooks/kopia_backups.yml -i "IP," -u root -e @/root/.pressctl/kopia-vars.yml
+- name: Kopia backups
+  hosts: all
+  become: true
+  gather_facts: false
+  roles:
+    - backups

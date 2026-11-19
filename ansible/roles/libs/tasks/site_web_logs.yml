@@ -1,0 +1,52 @@
+---
+# A site's root-owned web log directory, and the access log format its nginx
+# config can use. Used by website/tasks/files.yml, add_domain.yml and
+# alias_domain.yml.
+#
+# Needs: site_log_domain (the site's primary domain), site_log_group (its group).
+# Sets:  site_access_log_format
+
+# nginx and PHP-FPM open these logs as root, so they live outside the site's
+# home in a directory the site user can read but never change (a log in a
+# directory the user owns could be swapped for a link to a system file).
+# PHP-FPM refuses to start if a pool's slow log directory is missing, so this
+# must exist before the pool is written.
+- name: Ensure the root-owned web log directory exists
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/log/pressctl, group: root, mode: "0755" }
+    - { path: /var/log/pressctl/sites, group: root, mode: "0711" }
+    - { path: "/var/log/pressctl/sites/{{ site_log_domain }}", group: "{{ site_log_group }}", mode: "0750" }
+  loop_control:
+    label: "{{ item.path }}"
+
+# nginx's workers (www-data) reopen the logs themselves after a rotation
+# (USR1), so they need to pass through the directory. Traverse only.
+- name: Let nginx's workers reopen the site's web logs
+  ansible.posix.acl:
+    path: "/var/log/pressctl/sites/{{ site_log_domain }}"
+    entity: www-data
+    etype: user
+    permissions: x
+    state: present
+
+# The `pressctl` format (timings for pressctl-site-stats) is defined in the
+# nginx.conf from the nginx role. Servers that have not been re-provisioned or
+# run playbooks/harden_server.yml yet don't have it, and a site config naming
+# it would fail `nginx -t`. Those sites log in nginx's built-in `combined`
+# format until harden_server.yml switches them over.
+- name: Check whether nginx defines the pressctl access log format
+  ansible.builtin.command: grep -Eq '^\s*log_format\s+pressctl\s' /etc/nginx/nginx.conf
+  register: site_log_format_check
+  changed_when: false
+  failed_when: site_log_format_check.rc > 1
+  check_mode: false
+
+- name: Pick the site's access log format
+  ansible.builtin.set_fact:
+    site_access_log_format: "{{ 'pressctl' if site_log_format_check.rc == 0 else 'combined' }}"

@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# WordPress brute force, from the sites' access logs (pressctl log format).
+# A failed wp-login.php POST answers 200 (a successful one redirects with
+# 302). XML-RPC answers 200 whether the call worked or not, so only its 429s
+# (nginx's login rate limit) count: Jetpack and publishing apps stay unbanned.
+[Definition]
+failregex = ^<HOST> \S+ \S+ \[[^\]]*\] "POST /wp-login\.php[^"]*" (?:200|429) 
+            ^<HOST> \S+ \S+ \[[^\]]*\] "POST /xmlrpc\.php[^"]*" 429 
+ignoreregex =

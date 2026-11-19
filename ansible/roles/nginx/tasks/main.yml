@@ -65,8 +65,9 @@
     mode: "0755"
   loop:
     - /etc/nginx/global
-    - /etc/nginx/sites-available
-    - /etc/nginx/sites-enabled
+
+- name: Apply the nginx hardening and logging setup
+  ansible.builtin.import_tasks: hardening.yml
 
 - name: Generate default SSL certificate
   command: openssl req -x509 -nodes -days 1095 -newkey rsa:2048 -keyout /etc/nginx/sites-available/.no-default.key -out /etc/nginx/sites-available/.no-default.crt -subj "/C=US/O=pressctl"
@@ -85,6 +86,7 @@
     - { src: "wp-subdirectory.conf.j2", dest: "/etc/nginx/global/wp-subdirectory.conf" }
     - { src: "xmlrpc-protection.conf.j2", dest: "/etc/nginx/global/xmlrpc-protection.conf" }
     - { src: "well-known.conf.j2", dest: "/etc/nginx/global/well-known.conf" }
+    - { src: "basic-locations.conf.j2", dest: "/etc/nginx/global/basic-locations.conf" }
   notify: reload nginx
 
 - name: Create no-default site configuration

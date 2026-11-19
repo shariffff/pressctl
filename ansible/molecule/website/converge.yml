@@ -26,6 +26,7 @@
         db_user: '{{ site_id }}'
         db_pass: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
         db_prefix: "{{ lookup('password', '/dev/null length=4 chars=ascii_lowercase') }}_"
+        sso_secret: "{{ lookup('password', '/dev/null chars=hexdigits length=64') }}"
         admin_user: '{{ wp_admin_user }}'
         admin_email: '{{ wp_admin_email }}'
         admin_password: '{{ wp_admin_password }}'

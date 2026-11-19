@@ -17,7 +17,7 @@ worker_processes auto;
 # Maximum number of open files per worker process.
 # Should be > worker_connections.
 # Default: no limit
-worker_rlimit_nofile 8192;
+worker_rlimit_nofile {{ nginx_worker_rlimit_nofile | default(65535) }};
 
 events {
 	# If you need more connections than this, you start optimizing your OS.
@@ -70,6 +70,29 @@ http {
 	# This is only used when you don't override it on a server{} level
 	# Default: logs/access.log combined
 	access_log /var/log/nginx/access.log main;
+
+	# Per-site access logs (/var/log/pressctl/sites/<domain>/access.log) use this
+	# format: the combined format plus how long each request took (rt), how long
+	# PHP took (urt) and whether the page cache answered (cache). pressctl-site-stats
+	# reads these fields.
+	log_format pressctl '$remote_addr - $remote_user [$time_local] "$request" '
+					'$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+					'rt=$request_time urt=$upstream_response_time cache=$upstream_cache_status';
+
+	# Real visitor addresses for requests that come through Cloudflare, so logs,
+	# rate limits and fail2ban see the visitor and not a Cloudflare edge.
+	include global/cloudflare-realip.conf;
+
+	# Brute-force protection: login and XML-RPC POSTs are limited per visitor.
+	# Every other request has an empty key, which nginx never limits.
+	map "$request_method:$uri" $pressctl_login_limit_key {
+		"~^POST:/(?:wp-login\.php|xmlrpc\.php)$" $binary_remote_addr;
+		default "";
+	}
+	limit_req_zone $pressctl_login_limit_key zone=pressctl_login:10m rate={{ nginx_login_rate | default('10r/m') }};
+	limit_req zone=pressctl_login burst={{ nginx_login_burst | default(10) }} nodelay;
+	limit_req_status 429;
+	limit_req_log_level warn;
 
 	# How long to allow each connection to stay idle.
 	# Longer values are better for each individual client, particularly for SSL,

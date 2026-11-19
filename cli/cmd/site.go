@@ -56,20 +56,7 @@ var siteCreateCmd = &cobra.Command{
 
 			// Auto-generate site ID if not provided
 			if siteID == "" {
-				// Find target server to get existing sites
-				var targetServer *models.Server
-				for i := range cfg.Servers {
-					if cfg.Servers[i].Name == serverName {
-						targetServer = &cfg.Servers[i]
-						break
-					}
-				}
-				if targetServer != nil {
-					siteID = prompt.GenerateSiteID(domain, targetServer.Sites)
-				} else {
-					// Server not found will be caught later
-					siteID = prompt.GenerateSiteID(domain, nil)
-				}
+				siteID = prompt.GenerateSiteID(domain, prompt.AllSites(cfg.Servers))
 			}
 
 			input = &prompt.SiteInput{
@@ -86,6 +73,31 @@ var siteCreateCmd = &cobra.Command{
 			input, err = prompt.PromptSiteCreate(cfg.Servers)
 			if err != nil {
 				color.Red("Error: %v", err)
+				os.Exit(1)
+			}
+		}
+
+		// Enforce globally-unique site IDs so the same ID can't exist on
+		// multiple servers (interactive mode already generates a unique ID).
+		if err := prompt.EnsureSiteIDUnique(input.SiteID, cfg.Servers); err != nil {
+			color.Red("Error: %v", err)
+			os.Exit(1)
+		}
+
+		// Both values become root file paths, nginx config and account names
+		// on the server, so check them here for flags as well as prompts.
+		input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
+		if err := utils.ValidateDomain(input.Domain); err != nil {
+			color.Red("Error: domain %q: %v", input.Domain, err)
+			os.Exit(1)
+		}
+		if err := utils.ValidateSiteID(input.SiteID); err != nil {
+			color.Red("Error: %v", err)
+			os.Exit(1)
+		}
+		for i := range cfg.Servers {
+			if existing := utils.FindSiteByDomain(&cfg.Servers[i], input.Domain); existing != nil {
+				color.Red("Error: %s is already used by site '%s' on server '%s'", input.Domain, existing.SiteID, cfg.Servers[i].Name)
 				os.Exit(1)
 			}
 		}

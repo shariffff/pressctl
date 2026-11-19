@@ -49,7 +49,7 @@ func DefaultConfig() *Config {
 			PythonInterpreter: "/usr/bin/python3",
 		},
 		GlobalVars: map[string]interface{}{},
-		Servers: []models.Server{},
+		Servers:    []models.Server{},
 		Backup: BackupConfig{
 			Enabled: false,
 		},

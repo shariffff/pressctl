@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# Per-login limits for site owners' SSH sessions (a runaway or fork bomb
+# in one login can't take the server down for the other sites).
+@site-users  hard  nproc      400
+@site-users  hard  maxlogins  10
+@site-users  hard  core       0

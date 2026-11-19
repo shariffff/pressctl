@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(curl -sI https://github.com/vrana/adminer/releases/download/v6.0.1/adminer-6.0.1.php)",
+      "Shell(curl -s https://api.github.com/repos/Studio-42/elFinder/releases/tags/2.1.70)",
+      "Shell(python3 -c import json,sys; d=json.load(sys.stdin); print([a['name'] for a in d.get('assets',[])]))",
+      "Shell(curl -sL https://github.com/vrana/adminer/releases/download/v6.0.1/adminer-6.0.1.php -o /tmp/adminer-6.0.1.php)",
+      "Shell(shasum:*)",
+      "Shell(curl -s https://api.github.com/repos/prasathmani/tinyfilemanager/contents/tinyfilemanager.php)",
+      "Shell(python3 -c import json,sys;d=json.load(sys.stdin);print('sha:',d['sha']);print('size:',d['size']) curl -sL https://raw.githubusercontent.com/prasathmani/tinyfilemanager/master/tinyfilemanager.php -o /tmp/tfm.php)",
+      "Shell(curl -sL https://raw.githubusercontent.com/prasathmani/tinyfilemanager/2.6/tinyfilemanager.php -o /tmp/tfm-26.php)",
+      "Shell(php -v)",
+      "Shell(which mysql mysqld mariadb 2>/dev/null; php -m | grep -iE \"pdo_mysql|mysqli\" ; echo \"---\"; ls /usr/local/mysql* /opt/homebrew/opt/mysql* 2>/dev/null | head)",
+      "Shell(cd /tmp/sso-lint && rm -rf mysql-data && mkdir -p mysql-data # Init a throwaway datadir mariadb-install-db --datadir=/tmp/sso-lint/mysql-data --auth-root-authentication-method=normal >/dev/null 2>&1 # start with a socket + skip networking, no grant tables off (mariadbd --datadir=/tmp/sso-lint/mysql-data --socket=/tmp/sso-lint/mysqld.sock --port=3307 --skip-networking=0 --bind-address=127.0.0.1 >/tmp/sso-lint/mysql.log 2>&1 &) sleep 3 # create test db + user mysql --socket=/tmp/sso-lint/mysqld.sock -u root <<'EOF' CREATE DATABASE testsite; CREATE USER 'testsite'@'localhost' IDENTIFIED BY 'secretpass'; CREATE USER 'testsite'@'127.0.0.1' IDENTIFIED BY 'secretpass'; GRANT ALL PRIVILEGES ON testsite.* TO 'testsite'@'localhost'; GRANT ALL PRIVILEGES ON testsite.* TO 'testsite'@'127.0.0.1'; FLUSH PRIVILEGES; CREATE TABLE testsite.mytable (id INT, name VARCHAR(50)); INSERT INTO testsite.mytable VALUES (1, 'alice'), (2, 'bob'); EOF echo \"db ready: $(mysql --socket=/tmp/sso-lint/mysqld.sock -u testsite -psecretpass -h 127.0.0.1 -e 'SELECT COUNT(*) c FROM testsite.mytable;' 2>/dev/null)\" echo \"mysql log tail:\"; tail -3 /tmp/sso-lint/mysql.log)",
+      "Shell(cd /tmp/sso-lint && mysql -h 127.0.0.1 -P 3307 -u testsite -psecretpass -e 'SHOW DATABASES LIKE \"testsite\";' 2>/dev/null echo \"--- deploy adminer test ---\" rm -rf adm && mkdir -p adm cp /tmp/adminer-6.0.1.php adm/adminer-6.0.1.php # shared guard no-op cat > adm/sso-guard.php <<'EOF' <?php function wordsail_tool_sso_guard(string $tool): void {} EOF # creds file (as ansible would render) cat > adm/.db-creds.php <<'EOF' <?php define('WORDSAIL_DB_SERVER', '127.0.0.1:3307'); define('WORDSAIL_DB_USER', 'testsite'); define('WORDSAIL_DB_PASS', 'secretpass'); define('WORDSAIL_DB_NAME', 'testsite'); EOF # wrapper = adminer.php.j2 rendered python3 - <<'PY' src = open('/Users/sharif/code/pressctl/ansible/roles/website/templates/adminer.php.j2').read() open('adm/adminer.php','w').write(src) PY # serve (php -S 127.0.0.1:8127 -t adm >/dev/null 2>&1 &) sleep 1 echo \"=== GET /adminer.php ===\" curl -s \"http://127.0.0.1:8127/adminer.php\" -o adm/page.html -w \"code=%{http_code} size=%{size_download}\\n\" echo \"shows testsite db: $(grep -c 'testsite' adm/page.html)\" echo \"shows mytable: $(grep -c 'mytable' adm/page.html)\" echo \"login form (0=good): $(grep -ci 'login' adm/page.html)\" echo \"SSO authed message: $(grep -c 'via WordSail SSO' adm/page.html)\" pkill -f \"php -S 127.0.0.1:8127\" 2>/dev/null; echo done)",
+      "Shell(for:*)",
+      "Shell(do:*)",
+      "Shell(grep:*)",
+      "Shell(done:*)",
+      "Shell(cd /tmp/sso-lint && python3 - <<'PY' src = open('adm/adminer-6.0.1.php').read() import re # Find where login form is shown conditioned on connection for m in re.finditer(r'login\\(\\)\\{echo', src): print(\"loginForm def ok\") # find the main gate: \"if(...)login()\" style for kw in ['loginForm();','authenticate','$c=connect();','if(!$c)','auto_login']: i=src.find(kw) print(kw, '->', 'FOUND at', i if i>-1 else 'none') # look at connect() usage and page flow for kw in ['page_header(lang(']: for m in list(re.finditer(re.escape(kw), src))[:3]: print('ctx:', src[m.start()-260:m.start()+80].replace('\\n',' ')) PY)",
+      "Shell(cd /tmp/sso-lint && python3 - <<'PY' src = open('adm/adminer-6.0.1.php').read() i = src.find('loginForm();echo\"</form>') print(\"=== login form gate context ===\") print(src[i-1200:i+60].replace('\\n',' ')) PY)",
+      "Shell(cd /tmp/sso-lint && python3 - <<'PY' src = open('adm/adminer-6.0.1.php').read() import re # Find the main 'if(!isset($_GET[\"username\"]' / connect gate near start of runtime for m in re.finditer(r'\\$_GET\\[\"username\"\\]', src): ctx = src[m.start()-500:m.start()+40].replace('\\n',' ') print(\"...\", ctx[-520:], \"\\n=====\\n\") PY)",
+      "Shell(cd /tmp/sso-lint && python3 - <<'PY' src = open('adm/adminer-6.0.1.php').read() import re for name in ['function set_password','function get_password','function? password_file','$_SESSION[\"pwds\"]']: for m in re.finditer(re.escape(name), src): print(name, '->', repr(src[m.start():m.start()+220])) print('---') break PY)",
+      "Shell(mv:*)",
+      "Shell(yamllint:*)",
+      "Shell(echo:*)",
+      "Shell(ansible-lint:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

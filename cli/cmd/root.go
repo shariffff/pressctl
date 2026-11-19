@@ -179,6 +179,7 @@ func (m menuModel) View() string {
 			{"press server list", "List all servers"},
 			{"press server remove <name>", "Remove a server from configuration"},
 			{"press server provision <name>", "Provision a server"},
+			{"press server php-version add", "Install an additional PHP version on a server"},
 			{"press site create", "Create a new WordPress site"},
 			{"press site list", "List all sites"},
 			{"press site delete", "Delete a site"},

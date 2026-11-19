@@ -1,0 +1,21 @@
+---
+# Apply the SSH setup that site owners' logins need to a server that already
+# exists (new servers get it from the security role). Safe to re-run.
+#
+#   ansible-playbook playbooks/ssh_baseline.yml -i "IP," -u root [--check --diff]
+- name: SSH baseline for site logins
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply the site SSH tasks
+      ansible.builtin.include_role:
+        name: security
+        tasks_from: site_ssh.yml
+
+  handlers:
+    - name: restart ssh
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted

@@ -68,6 +68,26 @@ ansible-playbook playbooks/php_version_change.yml -i "IP," -u pressctl \
   --extra-vars "site_id=examplecom site_domain=example.com php_version=8.3 new_php_version=8.4"
 ```
 
+**Bring an existing server up to the current hardening and tuning (all its sites too):**
+
+```bash
+ansible-playbook playbooks/harden_server.yml -i "IP," -u root
+```
+
+**Which site is slow?** On the server, as root:
+
+```bash
+pressctl-site-stats                  # last 60 minutes, slowest sites first
+pressctl-site-stats --minutes 15 --sort php --slow-traces
+pressctl-site-stats --site example.com --json
+```
+
+It reads each site's access log (`/var/log/pressctl/sites/<domain>/access.log`,
+which records total time, PHP time and page-cache status per request), the
+PHP-FPM slow log (stack traces of requests over 5 s), PHP-FPM's live status and
+"max_children reached" warnings, and the MariaDB slow query log (by the site's
+database user).
+
 ## Playbook Overview
 
 | Playbook                          | Purpose                 | User   | Required Variables               |
@@ -77,16 +97,17 @@ ansible-playbook playbooks/php_version_change.yml -i "IP," -u pressctl \
 | `playbooks/domain_management.yml` | Add/remove domains, SSL | pressctl | operation, domain                |
 | `playbooks/delete_site.yml`       | Remove site completely  | pressctl | system_name                      |
 | `playbooks/php_version_change.yml`| Change site's PHP version | pressctl | site_id, site_domain, php_version, new_php_version |
+| `playbooks/harden_server.yml`     | Apply current hardening/tuning to an existing server and its sites | root | — |
 
 ## Roles Architecture
 
 | Role           | Purpose              | Key Tasks                                                                              |
 | -------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| **bootstrap**  | Base system setup    | Creates pressctl user, installs base packages, certbot, fail2ban, redis                    |
+| **bootstrap**  | Base system setup    | Creates pressctl user, installs base packages, certbot, fail2ban, redis (+ the sites' object-cache Redis) |
 | **database**   | MariaDB installation | Installs MariaDB, creates pressctlbot admin user, secures installation                     |
 | **nginx**      | Web server setup     | Installs Nginx from official repo, configures global settings, generates default SSL   |
 | **php**        | PHP installation     | Installs PHP 8.3 from ondrej/php PPA, configures PHP-FPM, installs Composer and WP-CLI |
-| **security**   | Security hardening   | Configures UFW firewall (ports 22/80/443), SSH hardening                               |
+| **security**   | Security hardening   | UFW, SSH hardening, site login sandbox, WordPress fail2ban jail, automatic updates, pressctl-site-stats |
 | **website**    | Site deployment      | Creates site user, database, PHP-FPM pool, Nginx vhost, installs WordPress             |
 | **libs**       | Reusable tasks       | add_domain, remove_domain, issue_ssl, cleanup_server                                   |
 | **operations** | Server operations    | delete_site, manage_database, manage_domain, manage_systemd, verify_connection         |

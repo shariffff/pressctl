@@ -1,2 +1,8 @@
 ---
-# All defaults are defined in group_vars/all.yml
+# Most defaults are in group_vars/all.yml. These sit with the role so the
+# playbooks under playbooks/ (which don't load group_vars) get them too.
+
+# Redis for the sites' object caches: its own instance, reachable only over a
+# unix socket by the sites' users, each limited to its own keys.
+redis_sites_maxmemory: "256mb"
+redis_sites_socket: /run/redis-sites/redis.sock

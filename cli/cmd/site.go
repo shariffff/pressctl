@@ -84,6 +84,24 @@ var siteCreateCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Both values become root file paths, nginx config and account names
+		// on the server, so check them here for flags as well as prompts.
+		input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
+		if err := utils.ValidateDomain(input.Domain); err != nil {
+			color.Red("Error: domain %q: %v", input.Domain, err)
+			os.Exit(1)
+		}
+		if err := utils.ValidateSiteID(input.SiteID); err != nil {
+			color.Red("Error: %v", err)
+			os.Exit(1)
+		}
+		for i := range cfg.Servers {
+			if existing := utils.FindSiteByDomain(&cfg.Servers[i], input.Domain); existing != nil {
+				color.Red("Error: %s is already used by site '%s' on server '%s'", input.Domain, existing.SiteID, cfg.Servers[i].Name)
+				os.Exit(1)
+			}
+		}
+
 		// Find the target server
 		var targetServer *models.Server
 		for i := range cfg.Servers {

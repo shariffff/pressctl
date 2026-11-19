@@ -16,10 +16,11 @@
  * session, and the token is only ever consumed on the redirect that
  * established the session (never left in the address bar afterwards).
  *
- * The cookie value is a random nonce with an HMAC-SHA256 over it, keyed by
- * a per-site secret stored 0600 in .sso-secret next to this file. The HMAC
- * makes the cookie unforgeable; validation recomputes and compares it with
- * hash_equals().
+ * The cookie value is an expiry time and a random nonce with an HMAC-SHA256
+ * over both (and the tool's name), keyed by a per-site secret stored 0600 in
+ * .sso-secret next to this file. The HMAC makes the cookie unforgeable, the
+ * signed expiry makes it stop working after the TTL even if it was copied,
+ * and the tool name keeps one tool's cookie from opening the other.
  */
 
 // Guard against direct web access to this file: it defines functions only,
@@ -30,6 +31,9 @@ if (!defined('ABSPATH') && basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sso-guar
 }
 
 const WORDSAIL_TOOL_SSO_SERVER = '{{ wordsail_sso_server | default("managed.wordsail.com") }}';
+// Other panels (e.g. staging) a request may pick with ?x_src_url=. Only hosts
+// the operator lists in wordsail_sso_extra_servers; none by default.
+const WORDSAIL_TOOL_SSO_EXTRA_SERVERS = {{ (wordsail_sso_extra_servers | default([]) | map('lower') | list) | to_json }};
 const WORDSAIL_TOOL_SSO_ENDPOINT = '/api/hosting/v1/wp-sso/';
 const WORDSAIL_TOOL_SSO_COOKIE_TTL = 3600;      // 1 hour, rolling
 const WORDSAIL_TOOL_SSO_COOKIE_PREFIX = 'wordsail_sso_';
@@ -46,15 +50,15 @@ function wordsail_tool_sso_guard(string $tool): void
 {
     $cookie = WORDSAIL_TOOL_SSO_COOKIE_PREFIX . $tool;
 
-    if (wordsail_tool_sso_valid_cookie($cookie)) {
-        wordsail_tool_sso_reissue($cookie);
+    if (wordsail_tool_sso_valid_cookie($cookie, $tool)) {
+        wordsail_tool_sso_reissue($cookie, $tool);
         return;
     }
 
     $had_cookie = isset($_COOKIE[$cookie]);
     $token = isset($_GET['token']) ? trim((string) $_GET['token']) : '';
     if ($token !== '' && preg_match('/^[a-zA-Z0-9]{64}$/', $token) && wordsail_tool_sso_verify($token)) {
-        wordsail_tool_sso_issue($cookie);
+        wordsail_tool_sso_issue($cookie, $tool);
         wordsail_tool_sso_redirect_clean();
     }
 
@@ -110,12 +114,15 @@ function wordsail_tool_sso_verify(string $token): bool
 }
 
 /**
- * Current request host, lowercased and stripped of any port, so
- * "example.com:443" still matches the panel's "example.com".
+ * The host nginx served this request for (its $host, passed as
+ * PRESSCTL_SITE_HOST by the tool locations), lowercased and without a port.
+ * Not the client's Host header: with an absolute URL in the request line nginx
+ * picks the site from that URL, so the Host header could name a different
+ * site than the one whose tools (secret, database, files) are being unlocked.
  */
 function wordsail_tool_sso_request_host(): string
 {
-    $host = isset($_SERVER['HTTP_HOST']) ? strtolower(trim((string) $_SERVER['HTTP_HOST'])) : '';
+    $host = isset($_SERVER['PRESSCTL_SITE_HOST']) ? strtolower(trim((string) $_SERVER['PRESSCTL_SITE_HOST'])) : '';
     if ($host === '') {
         return '';
     }
@@ -123,14 +130,15 @@ function wordsail_tool_sso_request_host(): string
 }
 
 /**
- * Panel host to verify against. Staging panels pass x_src_url, restricted
- * to *.wordsail.com so tokens cannot be "verified" elsewhere.
+ * Panel host to verify against. A staging panel may pass x_src_url, but only
+ * a host the operator listed in wordsail_sso_extra_servers is used: the
+ * verifier decides who gets in, so the request must not get to choose it.
  */
 function wordsail_tool_sso_server(): string
 {
     if (!empty($_GET['x_src_url'])) {
-        $host = parse_url(filter_var((string) $_GET['x_src_url'], FILTER_SANITIZE_URL), PHP_URL_HOST);
-        if (is_string($host) && preg_match('/^[a-z0-9-]+(\.[a-z0-9-]+)*\.wordsail\.com$/i', $host)) {
+        $host = parse_url((string) $_GET['x_src_url'], PHP_URL_HOST);
+        if (is_string($host) && in_array(strtolower($host), WORDSAIL_TOOL_SSO_EXTRA_SERVERS, true)) {
             return strtolower($host);
         }
     }
@@ -142,25 +150,24 @@ function wordsail_tool_sso_server(): string
  * keyed by the per-site secret, so possession of a well-formed cookie is not
  * enough to authenticate.
  */
-function wordsail_tool_sso_issue(string $cookie): void
+function wordsail_tool_sso_issue(string $cookie, string $tool): void
 {
+    $expires = time() + WORDSAIL_TOOL_SSO_COOKIE_TTL;
     $nonce = bin2hex(random_bytes(32));
-    $value = $nonce . '.' . wordsail_tool_sso_sign($nonce);
-    wordsail_tool_sso_set_cookie($cookie, $value);
+    $value = $expires . '.' . $nonce . '.' . wordsail_tool_sso_sign($tool, $expires, $nonce);
+    wordsail_tool_sso_set_cookie($cookie, $value, $expires);
 }
 
 /**
- * Re-issue (roll) the cookie so an active session never goes stale. Re-sign
- * with a fresh nonce so an old valid cookie is never replayed indefinitely.
+ * Re-issue (roll) the cookie so an active session never goes stale. Each value
+ * carries its own signed expiry, so a copied value stops working after the TTL.
  */
-function wordsail_tool_sso_reissue(string $cookie): void
+function wordsail_tool_sso_reissue(string $cookie, string $tool): void
 {
-    $nonce = bin2hex(random_bytes(32));
-    $value = $nonce . '.' . wordsail_tool_sso_sign($nonce);
-    wordsail_tool_sso_set_cookie($cookie, $value);
+    wordsail_tool_sso_issue($cookie, $tool);
 }
 
-function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
+function wordsail_tool_sso_set_cookie(string $cookie, string $value, int $expires): void
 {
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
@@ -169,7 +176,7 @@ function wordsail_tool_sso_set_cookie(string $cookie, string $value): void
         $cookie,
         $value,
         array(
-            'expires'  => time() + WORDSAIL_TOOL_SSO_COOKIE_TTL,
+            'expires'  => $expires,
             'path'     => '/',
             'secure'   => $secure,
             'httponly' => true,
@@ -201,14 +208,14 @@ function wordsail_tool_sso_secret(): string
 }
 
 /**
- * HMAC-SHA256 signature over the cookie nonce, hex encoded.
+ * HMAC-SHA256 signature over the tool, expiry and nonce, hex encoded.
  */
-function wordsail_tool_sso_sign(string $nonce): string
+function wordsail_tool_sso_sign(string $tool, int $expires, string $nonce): string
 {
-    return hash_hmac('sha256', $nonce, wordsail_tool_sso_secret());
+    return hash_hmac('sha256', $tool . '|' . $expires . '|' . $nonce, wordsail_tool_sso_secret());
 }
 
-function wordsail_tool_sso_valid_cookie(string $cookie): bool
+function wordsail_tool_sso_valid_cookie(string $cookie, string $tool): bool
 {
     if (!isset($_COOKIE[$cookie])) {
         return false;
@@ -216,8 +223,8 @@ function wordsail_tool_sso_valid_cookie(string $cookie): bool
 
     $value = (string) $_COOKIE[$cookie];
 
-    // Format: <64 hex nonce>.<64 hex signature>.
-    if (preg_match('/^([a-f0-9]{64})\.([a-f0-9]{64})$/', $value, $m) !== 1) {
+    // Format: <expiry unix time>.<64 hex nonce>.<64 hex signature>.
+    if (preg_match('/^(\d{1,12})\.([a-f0-9]{64})\.([a-f0-9]{64})$/', $value, $m) !== 1) {
         return false;
     }
 
@@ -226,9 +233,15 @@ function wordsail_tool_sso_valid_cookie(string $cookie): bool
         return false;
     }
 
-    $expected = hash_hmac('sha256', $m[1], $secret);
+    $expires = (int) $m[1];
+    $now = time();
+    if ($expires < $now || $expires > $now + WORDSAIL_TOOL_SSO_COOKIE_TTL + 60) {
+        return false;
+    }
 
-    return hash_equals($expected, $m[2]);
+    $expected = hash_hmac('sha256', $tool . '|' . $expires . '|' . $m[2], $secret);
+
+    return hash_equals($expected, $m[3]);
 }
 
 /**

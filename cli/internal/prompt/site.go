@@ -163,7 +163,7 @@ func generateUniqueSiteID(domain string, existingSites []models.Site) string {
 	base := generateBaseSiteID(domain)
 	candidate := base
 	suffix := 2
-	for siteIDExists(existingSites, candidate) {
+	for siteIDExists(existingSites, candidate) || utils.IsReservedSiteID(candidate) {
 		suffixStr := fmt.Sprintf("%d", suffix)
 		maxBaseLen := 16 - len(suffixStr)
 		if len(base) > maxBaseLen {

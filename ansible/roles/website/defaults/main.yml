@@ -68,6 +68,9 @@ filemanager_root: "{{ site_home }}/files"
 
 # Panel SSO authority
 wordsail_sso_server: "managed.wordsail.com"
+# Other panel hosts (e.g. a staging panel) that may verify tool sign-ins when
+# the request names them with ?x_src_url=. Empty: only wordsail_sso_server.
+wordsail_sso_extra_servers: []
 
 # elFinder file manager. Installed once per server, root-owned, outside every
 # site directory (so site users never see it over SSH/SFTP); each site only

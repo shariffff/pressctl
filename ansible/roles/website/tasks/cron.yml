@@ -22,10 +22,13 @@
     user: "{{ site_user }}"
     state: present
 
+# System paths only: the job starts pressctl-shell outside the sandbox, and a
+# site-owned directory here (~/.local/bin) would let the site replace the
+# programs it runs before the sandbox. Inside, the sandbox sets its own PATH.
 - name: Ensure PATH is set in cron
   ansible.builtin.cron:
     name: "PATH"
     env: true
     user: "{{ site_user }}"
-    value: "{{ site_home }}/.local/bin:/usr/bin:/bin"
+    value: "/usr/bin:/bin"
     state: present

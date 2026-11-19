@@ -131,11 +131,11 @@ func (e *Executor) ExecutePlaybook(playbookName string, server models.Server, ex
 
 	// Add extra vars if any exist
 	if len(allVars) > 0 {
-		varsJSON, err := json.Marshal(allVars)
+		varsFile, err := writeExtraVars(inventoryPath, allVars)
 		if err != nil {
-			return fmt.Errorf("failed to marshal extra vars: %w", err)
+			return err
 		}
-		args = append(args, "--extra-vars", string(varsJSON))
+		args = append(args, "--extra-vars", "@"+varsFile)
 	}
 
 	// Create command
@@ -384,11 +384,11 @@ func (e *Executor) ExecutePlaybookWithResult(playbookName string, server models.
 
 	// Add extra vars if any exist
 	if len(allVars) > 0 {
-		varsJSON, err := json.Marshal(allVars)
+		varsFile, err := writeExtraVars(inventoryPath, allVars)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal extra vars: %w", err)
+			return nil, err
 		}
-		args = append(args, "--extra-vars", string(varsJSON))
+		args = append(args, "--extra-vars", "@"+varsFile)
 	}
 
 	// Create command
@@ -575,4 +575,25 @@ func (e *Executor) streamOutput(reader io.Reader, isError bool) {
 			fmt.Println(line)
 		}
 	}
+}
+
+// writeExtraVars writes the playbook variables to a 0600 JSON file next to the
+// run's inventory (in its private directory, removed by Cleanup) and returns
+// its path. Passing them as a command-line argument would show passwords and
+// keys to every local user through the process list (ps, /proc/<pid>/cmdline).
+func writeExtraVars(inventoryPath string, vars map[string]interface{}) (string, error) {
+	data, err := json.Marshal(vars)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal extra vars: %w", err)
+	}
+	path := filepath.Join(filepath.Dir(inventoryPath), "extra-vars.json")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("failed to write extra vars: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		return "", fmt.Errorf("failed to write extra vars: %w", err)
+	}
+	return path, nil
 }

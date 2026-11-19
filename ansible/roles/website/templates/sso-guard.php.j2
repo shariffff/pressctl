@@ -35,6 +35,7 @@ const WORDSAIL_TOOL_SSO_SERVER = '{{ wordsail_sso_server | default("managed.word
 // the operator lists in wordsail_sso_extra_servers; none by default.
 const WORDSAIL_TOOL_SSO_EXTRA_SERVERS = {{ (wordsail_sso_extra_servers | default([]) | map('lower') | list) | to_json }};
 const WORDSAIL_TOOL_SSO_ENDPOINT = '/api/hosting/v1/wp-sso/';
+const WORDSAIL_TOOL_SSO_SITE_ID = {{ site_id | string | to_json }};
 const WORDSAIL_TOOL_SSO_COOKIE_TTL = 3600;      // 1 hour, rolling
 const WORDSAIL_TOOL_SSO_COOKIE_PREFIX = 'wordsail_sso_';
 
@@ -86,7 +87,14 @@ function wordsail_tool_sso_verify(string $token): bool
         ),
     ));
 
-    $url = 'https://' . wordsail_tool_sso_server() . WORDSAIL_TOOL_SSO_ENDPOINT . rawurlencode($token);
+    // Name this site so the panel only accepts (and burns) a token minted
+    // for it; a token for another site on the same server is refused there.
+    $request_host = wordsail_tool_sso_request_host();
+    if ($request_host === '') {
+        return false;
+    }
+    $url = 'https://' . wordsail_tool_sso_server() . WORDSAIL_TOOL_SSO_ENDPOINT . rawurlencode($token)
+        . '?' . http_build_query(array('site' => WORDSAIL_TOOL_SSO_SITE_ID, 'domain' => $request_host));
     $body = @file_get_contents($url, false, $ctx);
 
     if ($body === false) {
@@ -109,8 +117,11 @@ function wordsail_tool_sso_verify(string $token): bool
         return false;
     }
 
-    $request_host = wordsail_tool_sso_request_host();
-    return '' !== $request_host && hash_equals(strtolower($data['domain']), $request_host);
+    // Check the answer too, in case the panel predates site binding.
+    if (isset($data['site_id']) && (!is_string($data['site_id']) || !hash_equals(WORDSAIL_TOOL_SSO_SITE_ID, $data['site_id']))) {
+        return false;
+    }
+    return hash_equals(strtolower($data['domain']), $request_host);
 }
 
 /**

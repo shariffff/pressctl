@@ -27,32 +27,70 @@ const WORDSAIL_ELFINDER_ROOT = '{{ filemanager_root }}';
 const WORDSAIL_ELFINDER_TEMP = __DIR__ . '/.tmp';
 
 if (isset($_GET['cmd']) || ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    wordsail_elfinder_reject_cross_site();
+    wordsail_elfinder_csrf_check();
     wordsail_elfinder_connector();
     exit;
 }
 
 /**
  * The only credential is the SameSite=Lax tool cookie, which browsers also
- * send on a link or redirect from another site. So: a command a browser marks
- * as coming from another site is refused, and on GET only read-only commands
- * run (this page's own client sends everything else as POST, which other
- * sites cannot do with the cookie attached).
+ * send on a link or redirect from another site. Block that from changing
+ * anything:
+ *
+ * 1. A request the browser marks as cross-site (Sec-Fetch-Site) is refused.
+ * 2. Only read-only commands may use GET; everything else needs POST (405).
+ * 3. Every connector request needs X-Requested-With: XMLHttpRequest, which a
+ *    cross-site link or form cannot add (403). Plain `cmd=file` and the zip
+ *    download step (`cmd=zipdl&download=1`) are exempt because they open in a
+ *    new tab or frame; both are read-only.
+ * 4. A POST that carries Origin or Referer must come from this site (403).
  */
-function wordsail_elfinder_reject_cross_site(): void
+function wordsail_elfinder_csrf_check(): void
 {
-    $read_only = array('open', 'file', 'tree', 'parents', 'ls', 'tmb', 'size', 'dim',
-                       'info', 'search', 'get', 'url', 'zipdl');
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-    $cmd = (string) ($_GET['cmd'] ?? ($_POST['cmd'] ?? ''));
-    $cross_site = ($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site';
+    $cmd = (string) ($_REQUEST['cmd'] ?? '');
 
-    if ($cross_site || ($method !== 'POST' && !in_array($cmd, $read_only, true))) {
-        http_response_code(403);
-        header('Content-Type: application/json');
-        echo json_encode(array('error' => array('errPerm')));
-        exit;
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site') {
+        wordsail_elfinder_fail(403, 'Cross-site request blocked.');
     }
+
+    $readOnly = array('open', 'file', 'ls', 'tree', 'parents', 'info', 'size', 'dim',
+                      'search', 'get', 'tmb', 'url', 'zipdl');
+    if ($method !== 'POST' && !($method === 'GET' && in_array($cmd, $readOnly, true))) {
+        header('Allow: POST');
+        wordsail_elfinder_fail(405, 'Method not allowed.');
+    }
+
+    $isDownload = $method === 'GET'
+        && ($cmd === 'file' || ($cmd === 'zipdl' && !empty($_GET['download'])));
+    if (!$isDownload && ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
+        wordsail_elfinder_fail(403, 'Missing request header.');
+    }
+
+    if ($method === 'POST') {
+        $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        foreach (array('HTTP_ORIGIN', 'HTTP_REFERER') as $key) {
+            if (!isset($_SERVER[$key]) || $_SERVER[$key] === '') {
+                continue;
+            }
+            $from = parse_url((string) $_SERVER[$key], PHP_URL_HOST);
+            $port = parse_url((string) $_SERVER[$key], PHP_URL_PORT);
+            if (is_string($from) && $port) {
+                $from .= ':' . $port;
+            }
+            if (!is_string($from) || $host === '' || strtolower($from) !== $host) {
+                wordsail_elfinder_fail(403, 'Cross-site request blocked.');
+            }
+        }
+    }
+}
+
+function wordsail_elfinder_fail(int $status, string $message): void
+{
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array('error' => $message));
+    exit;
 }
 
 /**
@@ -138,6 +176,9 @@ $(function () {
         lang: 'en',
         height: '100%',
         resizable: false,
+        // Required by the CSRF check above; jQuery sends it already, this
+        // makes it explicit.
+        customHeaders: { 'X-Requested-With': 'XMLHttpRequest' },
         rememberLastDir: true
     });
     $(window).on('resize', function () {
